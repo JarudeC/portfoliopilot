@@ -1,0 +1,33 @@
+# ─── Core numerical & data wrangling ──────────────────────────────
+numpy>=2.1
+pandas>=2.2
+scipy>=1.12
+scikit-learn>=1.5
+matplotlib>=3.8
+tqdm>=4.66
+python-dotenv>=1.0
+
+# ─── Jupyter / interactive work ───────────────────────────────────
+jupyter>=1.0
+ipykernel>=6.29
+
+# ─── Reinforcement-learning stack (A2C, PPO, etc.) ────────────────
+stable-baselines3[extra]>=2.2.1   # pulls gymnasium, atari ROM loaders, etc.
+cloudpickle>=3.0                  # safe to pin
+
+# ─── Portfolio optimisation helpers ───────────────────────────────
+cvxpy>=1.4.3
+scs>=3.2.4                        # default sparse solver
+
+# ─── Finance & technical-analysis utilities ───────────────────────
+pandas_datareader>=0.10
+ta>=0.11.0
+yfinance>=0.2.37                 # Yahoo Finance API wrapper
+
+# ─── FastAPI + ASGI server ────────────────────────────────────────
+fastapi>=0.111
+uvicorn[standard]>=0.30
+
+# ─── NOTE on PyTorch ──────────────────────────────────────────────
+# PyTorch must match the CUDA version on each machine, so we
+# install it *outside* requirements.txt.

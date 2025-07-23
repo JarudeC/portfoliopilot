@@ -1,0 +1,34 @@
+{
+    "CA-GMVP": {
+        "Return": "-35.36%",
+        "AR": "-4.14%",
+        "Daily Vol": "0.91%",
+        "Annual Vol": "14.47%",
+        "Sharpe": "-0.29",
+        "Sortino": "-0.35"
+    },
+    "PPN": {
+        "Return": "536.93%",
+        "AnnualReturn": "19.40%",
+        "DailyVol": "2.00%",
+        "AnnualVol": "31.69%",
+        "Sharpe": "0.61",
+        "Sortino": "0.72"
+    },
+    "Naive Markowitz": {
+        "Return": "144.70%",
+        "AR": "8.95%",
+        "Daily Vol": "0.42%",
+        "Annual Vol": "6.68%",
+        "Sharpe": "1.34",
+        "Sortino": "8.72"
+    },
+    "margin_trader": {
+        "Return": "-1027.03%",
+        "AnnualReturn": "-98.33%",
+        "DailyVol": "13.41%",
+        "AnnualVol": "212.87%",
+        "Sharpe": "-0.46",
+        "Sortino": "-0.43"
+    }
+}

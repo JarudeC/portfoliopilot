@@ -1,0 +1,20 @@
+{
+  "input": {
+    "feature_number": 1,
+    "window_size": 252,
+    "coin_number": 1224
+  },
+  "training": {
+    "gamma": 0.001,
+    "alpha": 0.0001,
+    "learning_rate": 0.001,
+    "decay_steps": 50000,
+    "decay_rate": 0.9,
+    "training_method": "Adam",
+    "loss_function": "loss_function6"
+  },
+  "trading": {
+    "trading_consumption": 0.002
+  },
+  "random_seed": 42
+}
