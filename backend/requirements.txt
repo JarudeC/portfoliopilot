@@ -12,22 +12,28 @@ jupyter>=1.0
 ipykernel>=6.29
 
 # ─── Reinforcement-learning stack (A2C, PPO, etc.) ────────────────
-stable-baselines3[extra]>=2.2.1   # pulls gymnasium, atari ROM loaders, etc.
-cloudpickle>=3.0                  # safe to pin
+stable-baselines3[extra]>=2.2.1
+cloudpickle>=3.0
 
 # ─── Portfolio optimisation helpers ───────────────────────────────
 cvxpy>=1.4.3
-scs>=3.2.4                        # default sparse solver
+scs>=3.2.4
 
 # ─── Finance & technical-analysis utilities ───────────────────────
 pandas_datareader>=0.10
 ta>=0.11.0
-yfinance>=0.2.37                 # Yahoo Finance API wrapper
+yfinance>=0.2.37
 
 # ─── FastAPI + ASGI server ────────────────────────────────────────
 fastapi>=0.111
 uvicorn[standard]>=0.30
 
+# ─── Forecasting stack (ARIMA / LSTM / Autoformer) ────────────────
+statsmodels>=0.14.5           # NumPy-2-compatible ARIMA
+einops>=0.7                   # needed by transformer implementations
+# (PyTorch itself is installed separately to match your CUDA/CPU build)
+# Note: Autoformer requires manual implementation or external package
+
 # ─── NOTE on PyTorch ──────────────────────────────────────────────
-# PyTorch must match the CUDA version on each machine, so we
-# install it *outside* requirements.txt.
+#   pip/conda install torch==<version> outside this file so you can
+#   choose the correct CPU-only or CUDA wheel for each machine.

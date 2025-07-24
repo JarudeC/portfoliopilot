@@ -14,6 +14,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  ReferenceLine,
 } from "recharts";
 
 /* Dow 30 – Forecast algos – Back-test algos */
@@ -91,6 +92,12 @@ const Dropdown = ({
   </details>
 );
 
+// Type for forecast data per ticker
+type ForecastData = {
+  historySeries: { date: string; price: number }[];
+  forecastSeries: { date: string; price: number }[];
+};
+
 export default function Dashboard() {
   /* ─ State ─ */
   const [tickers, setTickers] = useState<string[]>([]);
@@ -107,6 +114,13 @@ export default function Dashboard() {
   const [weights, setWeights] = useState<Record<string, number> | null>(null);
   const [metrics, setMetrics] = useState<Record<string, number> | null>(null);
   const [btHistDays, setBtHistDays] = useState(365);
+  const [fLoading, setFLoading] = useState(false);
+  const [fProg, setFProg] = useState(0);
+  // Changed to store forecast data for multiple tickers
+  const [forecastDataMap, setForecastDataMap] = useState<
+    Record<string, ForecastData>
+  >({});
+  const [forecastingTickers, setForecastingTickers] = useState<string[]>([]);
 
   const toggle = (t: string) =>
     setTickers((p) => {
@@ -183,6 +197,85 @@ export default function Dashboard() {
     }
   };
 
+  const runForecast = async () => {
+    if (!tickers.length || fLoading) return;
+
+    setFLoading(true);
+    setFProg(0);
+    setForecastDataMap({});
+    setForecastingTickers([...tickers]);
+
+    const today = new Date();
+    const maxEndDate = new Date("2024-12-31");
+    const endDate = today > maxEndDate ? maxEndDate : today;
+    const end = endDate.toISOString().slice(0, 10);
+    const start = new Date(endDate.getTime() - histDays * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+
+    const totalTickers = tickers.length;
+    let completedTickers = 0;
+    const tempDataMap: Record<string, ForecastData> = {};
+
+    try {
+      for (const ticker of tickers) {
+  try {
+    const res = await fetch(`/api/forecast/${algo.toLowerCase()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker, start, end, horizon: forecastDays }),
+    });
+    
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    
+    const payload = await res.json();
+    console.log(`${ticker} payload:`, payload); // Debug log
+    
+    // Check if we got the expected data structure
+    if (!payload.history_dates || !payload.history_values || 
+        !payload.forecast_dates || !payload.forecast_values) {
+      console.error(`Invalid payload structure for ${ticker}:`, payload);
+      throw new Error(`Invalid response structure: missing required fields`);
+    }
+
+    const toSeries = (d: string[], v: number[]) =>
+      d.map((x, i) => ({ date: x, price: v[i] }));
+
+    tempDataMap[ticker] = {
+      historySeries: toSeries(payload.history_dates, payload.history_values),
+      forecastSeries: toSeries(
+        payload.forecast_dates,
+        payload.forecast_values,
+      ),
+    };
+
+    completedTickers++;
+    setFProg((completedTickers / tickers.length) * 100);
+  } catch (err) {
+    console.error(`forecast ${ticker}:`, err);
+    // Add empty data for failed ticker to prevent UI crashes
+    tempDataMap[ticker] = {
+      historySeries: [],
+      forecastSeries: [],
+    };
+    // Continue processing other tickers even if this one fails
+    completedTickers++;
+    setFProg((completedTickers / tickers.length) * 100);
+  }
+}
+
+/* merge once at the end */
+setForecastDataMap(tempDataMap);
+setFLoading(false);
+    } catch (e) {
+      console.error(e);
+      alert((e as Error).message);
+      setFLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0D1B2A] text-white flex flex-col">
       <Navbar />
@@ -232,7 +325,7 @@ export default function Dashboard() {
             ))}
           </ul>
         </aside>
-        <section className="flex flex-col bg-[#14273F] rounded-xl p-6">
+        <section className="flex flex-col bg-[#14273F] rounded-xl p-6 h-full">
           <div className="flex items-start justify-between mb-6">
             <h2 className="text-lg font-semibold">Forecasting</h2>
             <details className="relative group">
@@ -253,7 +346,7 @@ export default function Dashboard() {
               </summary>
 
               {/* pop-up */}
-              <div className="param-pop absolute right-0 mt-2 space-y-4">
+              <div className="param-pop absolute right-0 mt-2 space-y-4 z-10">
                 <button
                   onClick={() => {
                     setHistDays(180);
@@ -288,14 +381,128 @@ export default function Dashboard() {
             />
           </Filter>
 
-          {/* Chart area */}
-          <div className="flex-1 flex items-center justify-center">
-            {tickers.length ? (
-              <span className="text-gray-400">[Chart placeholder]</span>
-            ) : (
-              <span className="text-gray-500">
-                Select tickers to preview forecast
+          {/* ─── Train button ─── */}
+          <button
+            onClick={runForecast}
+            disabled={fLoading || !tickers.length}
+            className="mt-6 bg-[#4CC9F0] hover:bg-[#3A86FF] text-[#0D1B2A] font-semibold rounded-full py-2 transition disabled:opacity-40"
+          >
+            {fLoading ? "Running…" : "Train"}
+          </button>
+
+          {/* progress bar */}
+          {fLoading && (
+            <div className="mt-5 relative h-3 rounded-full bg-[#1B263B]">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[#3A86FF] to-[#4CC9F0] transition-[width] duration-300"
+                style={{ width: `${fProg}%` }}
+              />
+              <span className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold text-[#E0E8F9]">
+                {fProg.toFixed(0)}%
               </span>
+            </div>
+          )}
+
+          {/* ─── Charts area - multiple small charts ─── */}
+          <div className="flex-1 overflow-y-auto mt-6 space-y-4">
+            {forecastingTickers.length > 0 &&
+            !fLoading &&
+            Object.keys(forecastDataMap).length ===
+              forecastingTickers.length ? (
+              <div className="grid grid-cols-1 gap-4">
+                {forecastingTickers.map((ticker) => {
+  /* pull THIS ticker’s data */
+  const data = forecastDataMap[ticker];
+
+  /* if not yet fetched → placeholder */
+  if (!data) {
+    return (
+      <div key={ticker} className="bg-[#0d1b2a]/50 rounded-lg p-3 h-[172px] flex items-center justify-center">
+        <span className="text-xs text-gray-400">Loading…</span>
+      </div>
+    );
+  }
+
+  /* per-ticker series */
+  const { historySeries, forecastSeries } = data;
+  const allData   = [...historySeries, ...forecastSeries];
+  const splitDate = historySeries.at(-1)!.date;
+  const tickInt   = Math.max(1, Math.floor(allData.length / 4));
+
+  return (
+    <div key={ticker} className="bg-[#0d1b2a]/50 rounded-lg p-3">
+      <h4 className="text-sm font-semibold text-cyan-300 mb-2">{ticker}</h4>
+
+      <ResponsiveContainer width="100%" height={140}>
+        <LineChart data={allData} margin={{ top: 5, right: 20, bottom: 25, left: 45 }}>
+          <XAxis
+            dataKey="date"
+            interval={tickInt}
+            tickFormatter={(d) => {
+              const dt = new Date(d);
+              return `${(dt.getMonth() + 1).toString().padStart(2, "0")}/${dt
+                .getDate()
+                .toString()
+                .padStart(2, "0")}`;
+            }}
+            stroke="#7C8BAC"
+            fontSize={10}
+            tick={{ fill: "#7C8BAC" }}
+            axisLine={{ stroke: "#7C8BAC" }}
+          />
+          <YAxis
+            domain={["dataMin - 5", "dataMax + 5"]}
+            width={40}
+            stroke="#7C8BAC"
+            fontSize={10}
+            tick={{ fill: "#7C8BAC" }}
+            axisLine={{ stroke: "#7C8BAC" }}
+            tickFormatter={(v) => v.toFixed(0)}
+          />
+          <Tooltip
+            contentStyle={{
+              background: "#1B263B",
+              border: "none",
+              borderRadius: "4px",
+              color: "#E0E8F9",
+              fontSize: "12px",
+            }}
+            formatter={(v: number) => v.toFixed(2)}
+            labelFormatter={(l) => l.slice(0, 10)}
+          />
+
+          {/* solid blue for full series */}
+          <Line
+            dataKey="price"
+            type="monotone"
+            stroke="#4CC9F0"
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+
+          {/* dotted red separator */}
+          <ReferenceLine
+            x={splitDate}
+            stroke="#FF6B6B"
+            strokeDasharray="3 3"
+            strokeWidth={2}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+})}
+
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center">
+                <span className="text-gray-500">
+                  {fLoading
+                    ? `Fetching forecasts for ${forecastingTickers.length} stocks...`
+                    : "Select stocks and run forecast"}
+                </span>
+              </div>
             )}
           </div>
         </section>
@@ -321,7 +528,7 @@ export default function Dashboard() {
                 </svg>
               </summary>
 
-              <div className="absolute right-0 param-pop space-y-4">
+              <div className="absolute right-0 param-pop space-y-4 z-10">
                 <button
                   onClick={() => {
                     setBtHistDays(365);
@@ -397,7 +604,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* After training finishes you’d conditionally render pie + table */}
+          {/* After training finishes you'd conditionally render pie + table */}
           {/* ───── RESULTS ─────────────────────────────────────────── */}
           {!loading && prog === 100 && nav && weights && metrics && (
             <>
