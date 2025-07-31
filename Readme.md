@@ -30,11 +30,10 @@ A full-stack web application for portfolio optimization using machine learning a
 Portfolio Pilot allows users to build and optimize investment portfolios using advanced machine learning techniques. The platform combines classical portfolio theory with modern forecasting models to help users make informed investment decisions.
 
 **Dashboard** - Interactive interface for stock selection and model training initiation.
-[image]
+![dashboard](https://github.com/user-attachments/assets/02a4133f-aaca-487b-b41b-cccaa347b556)
 
 **History** - View past training results and portfolio performance analytics.
-[image]
-
+![history](https://github.com/user-attachments/assets/48a8fe79-23b5-40fe-961f-a682a6a00d1f)
 
 ## Project Structure
 
