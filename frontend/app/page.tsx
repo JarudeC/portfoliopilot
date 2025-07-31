@@ -130,19 +130,22 @@ export default function Home() {
       {/* ───────────── Sample Forecast Visualization ───────────── */}
       <section className="max-w-6xl mx-auto px-6 py-20" id="preview">
         <h2 className="text-3xl md:text-4xl font-bold mb-12 text-center">
-          Live Preview
+          Demo
         </h2>
-        <div className="relative w-full h-96 rounded-xl overflow-hidden shadow-lg">
-          <video
-          className="absolute inset-0 w-full h-full object-cover opacity-20"
-          autoPlay
-          loop
-          muted
-          playsInline
-        >
-          <source src="/stockvid.mp4" type="video/mp4" />
-          Your browser does not support the video tag.
-        </video>
+        <div className="relative w-full max-w-6xl mx-auto rounded-xl overflow-hidden shadow-2xl bg-gradient-to-br from-[#4CC9F0] via-[#3A86FF] to-[#7209B7] p-1">
+          <div className="bg-black rounded-lg overflow-hidden">
+            <video
+              className="w-full h-auto"
+              autoPlay
+              loop
+              muted
+              playsInline
+              controls
+            >
+              <source src="/PortfolioPilot_Demo.mp4" type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+          </div>
         </div>
       </section>
 

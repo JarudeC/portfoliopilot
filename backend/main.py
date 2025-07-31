@@ -43,7 +43,7 @@ _train_jobs: Dict[str, Dict[str, Any]] = {}
 @app.post("/train")
 def launch_backtest(req: TrainReq, bt: BackgroundTasks):
     jid = uuid4().hex
-    _train_jobs[jid] = {"status": "queued"}
+    _train_jobs[jid] = {"status": "queued", "algo": req.algo}
     bt.add_task(_train_worker, jid, req)
     return {"job_id": jid}
 
@@ -66,12 +66,13 @@ def _train_worker(jid: str, req: TrainReq):
         }
         _train_jobs[jid] = {
             "status": "done",
+            "algo": req.algo,
             "nav": nav_json,
             "weights": weights,
             "metrics": metrics,
         }
     except Exception as exc:  # noqa: BLE001
-        _train_jobs[jid] = {"status": "error", "detail": str(exc)}
+        _train_jobs[jid] = {"status": "error", "algo": req.algo, "detail": str(exc)}
 
 
 @app.get("/train/{jid}")
@@ -120,7 +121,7 @@ def forecast(algo: Literal["arima", "lstm", "autoformer"], req: base.ForecastReq
     # Handle async models
     if algo in _ASYNC_FORECASTERS:
         task_id = uuid4().hex
-        _forecast_jobs[task_id] = {"status": "running"}
+        _forecast_jobs[task_id] = {"status": "running", "algo": algo}
         bg.add_task(_async_wrapper, algo, req, task_id)
         return {"task_id": task_id, "status": "running"}
 
@@ -130,9 +131,9 @@ def forecast(algo: Literal["arima", "lstm", "autoformer"], req: base.ForecastReq
 def _async_wrapper(algo_key: str, req: base.ForecastRequest, tid: str) -> None:
     try:
         hd, hv, fd, fv = _ASYNC_FORECASTERS[algo_key](req)
-        _forecast_jobs[tid] = {"status": "done", **_payload(hd, hv, fd, fv)}
+        _forecast_jobs[tid] = {"status": "done", "algo": algo_key, **_payload(hd, hv, fd, fv)}
     except Exception as exc:  # noqa: BLE001
-        _forecast_jobs[tid] = {"status": "error", "detail": str(exc)}
+        _forecast_jobs[tid] = {"status": "error", "algo": algo_key, "detail": str(exc)}
 
 
 @app.get("/forecast/result/{task_id}")

@@ -8,6 +8,9 @@ const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8000";
 // Store job parameters for completion tracking
 export const jobParameters = new Map<string, any>();
 
+// Track logged jobs to prevent duplicates
+export const loggedJobs = new Set<string>();
+
 export async function POST(req: NextRequest) {
   try {
     // Check user authentication

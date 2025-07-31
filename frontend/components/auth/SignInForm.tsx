@@ -31,7 +31,7 @@ export default function SignInForm({ onToggleMode }: SignInFormProps) {
       setLoading(true);
       setError("");
       await signIn(formData.email, formData.password);
-      router.push("/dashboard");
+      router.push("/");
     } catch (error: any) {
       console.error("Sign in error:", error);
       setError(error.message || "Failed to sign in");

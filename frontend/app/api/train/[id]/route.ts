@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TrainingLogService } from "@/lib/services/training-logs";
 import { requireAuth, createAuthError, getAuthenticatedUser } from "@/lib/auth/server";
-import { jobParameters } from "../route";
+import { jobParameters, loggedJobs } from "../route";
 
 const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8000";
 
@@ -50,6 +50,10 @@ export async function GET(
     
     if (r.ok && (isBacktestComplete || isForecastComplete)) {
       try {
+        // Check if this job has already been logged to prevent duplicates
+        if (loggedJobs.has(id)) {
+          return NextResponse.json(data, { status: r.status });
+        }
         
         // Retrieve cached job parameters
         const originalParams = jobParameters.get(id);
@@ -77,10 +81,19 @@ export async function GET(
         // Get stock list from response
         const stocks = data.tickers || Object.keys(data.weights || {}) || [];
         
+        // Ensure we have a valid model name - backend always provides algo field
+        const modelName = data.algo || originalParams?.algo || data.model || data.algorithm;
+        
+        // Skip logging if we somehow don't have a model name (shouldn't happen with current backend)
+        if (!modelName) {
+          console.error('No model name found for job:', id, 'data:', data, 'params:', originalParams);
+          return NextResponse.json(data, { status: r.status });
+        }
+        
         const logData = {
           type: (isForecast ? 'forecast' : 'backtest') as const,
           stocks: stocks,
-          model: originalParams?.algo || data.algo || data.model || data.algorithm || 'unknown',
+          model: modelName,
           parameters: {
             job_id: id,
             ...(originalParams || {}),
@@ -110,8 +123,13 @@ export async function GET(
         
         await logService.createLog(logData, user.id);
         
-        // Remove cached parameters
+        // Remove cached parameters and cleanup
         jobParameters.delete(id);
+        
+        // Mark job as logged only after successful database insert
+        loggedJobs.add(id);
+        
+        console.log('Successfully logged training result:', { type: logData.type, model: modelName, job_id: id });
       } catch (logError) {
         console.error('Failed to log completed training:', logError);
         console.error('Error stack:', logError.stack);

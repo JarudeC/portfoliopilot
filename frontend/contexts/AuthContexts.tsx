@@ -73,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithProvider = async (provider: 'google') => {
     const currentPath = window.location.pathname
-    const redirectPath = currentPath === '/' ? '/dashboard' : currentPath
+    const redirectPath = currentPath === '/' ? '/' : currentPath
     const redirectUrl = `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectPath)}`
     
     
