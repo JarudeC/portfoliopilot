@@ -15,15 +15,11 @@ A full-stack web application for portfolio optimization using machine learning a
 - FastAPI with Python
 - Machine Learning models (ARIMA, LSTM, Autoformer)
 - Portfolio optimization algorithms (Markowitz, GMVP, Reinforcement Learning)
-- NumPy, Pandas, Scikit-learn for data processing
+- NumPy, Pandas, Scikit-learn, PyTorch for data processing
 
 **Database & Authentication:**
 - Supabase (OAuth and PostgreSQL)
 - JWT token management
-
-**Deployment:**
-- Uvicorn ASGI server
-- Environment configuration with python-dotenv
 
 ## Project Overview
 
@@ -84,12 +80,12 @@ npm run dev
 
 ## How to Use
 
-[video]
+https://github.com/user-attachments/assets/ebbf0e22-f293-47b5-ba1a-dc2154f525e9
 
 1. **Sign In/Login** - Authenticate using OAuth through Supabase
 2. **Dashboard** - Navigate to the main dashboard
 3. **Pick Stocks** - Select stocks for your portfolio
-4. **Train Models** - Choose between forecasting or portfolio optimization training
+4. **Train Models** - Choose between forecasting or portfolio optimization training with desired parameters
 5. **View History** - Review past training results and portfolio performance
 
 ## Algorithms Implemented
