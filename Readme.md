@@ -84,7 +84,7 @@ npm run dev
 
 ## How to Use
 
-[video]
+Uploading PortfolioPilot_Demo.mp4…
 
 1. **Sign In/Login** - Authenticate using OAuth through Supabase
 2. **Dashboard** - Navigate to the main dashboard
