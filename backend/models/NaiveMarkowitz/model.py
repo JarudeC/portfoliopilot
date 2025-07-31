@@ -14,9 +14,9 @@ class Naive_Markowitz:
     def __init__(
         self,
         historical_data: pd.DataFrame,
-        lookback_window: list[int],          # [start_row, end_row]
-        evaluation_window: int,              # e.g. 5 days
-        eta: float,                          # noise scale (0 ⇒ no noise)
+        lookback_window: list[int],         
+        evaluation_window: int,              
+        eta: float,                          
         markowitz_type: str = "expected_returns",
         transaction_cost_rate: float = 0.0001,
     ):
@@ -32,9 +32,7 @@ class Naive_Markowitz:
         self.mu  = self._exp_returns_with_noise()      # (N,)
         self.w   = self._markowitz_weights()           # (N,)
 
-    # ────────────────────────────────────────────────────────────────
     # helpers
-    # ────────────────────────────────────────────────────────────────
     def _cov_matrix(self) -> pd.DataFrame:
         rets = self.historical_data.iloc[self.lb0:self.lb1].pct_change().dropna()
         cov = rets.cov().fillna(0.)
@@ -79,9 +77,7 @@ class Naive_Markowitz:
         # gross-leverage = 1
         return w / np.sum(np.abs(w))
 
-    # ────────────────────────────────────────────────────────────────
     # public API
-    # ────────────────────────────────────────────────────────────────
     def weights(self) -> pd.Series:
         return pd.Series(self.w, index=self.historical_data.columns, name="weight")
 

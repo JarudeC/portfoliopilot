@@ -31,7 +31,7 @@ def compute_metrics_from_nav(nav: pd.Series, td: int = 252, rf: float = 0.0):
     }
 
 
-# ── helper: update metrics JSON ────────────────────────────────
+# helper: update metrics JSON
 def update_metrics(model_name: str, metrics: dict, path: Path):
     os.makedirs(path.parent, exist_ok=True)
     all_metrics = {}
@@ -42,7 +42,7 @@ def update_metrics(model_name: str, metrics: dict, path: Path):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(all_metrics, f, indent=4, ensure_ascii=False)
 
-# ── main script ────────────────────────────────────────────────
+# main script
 if __name__ == "__main__":
     HERE         = Path(__file__).resolve().parent
     results_dir  = HERE / "results"

@@ -1,23 +1,14 @@
+// Main trading dashboard for portfolio forecasting and backtesting
 "use client";
 
 import { useState } from "react";
-import Navbar from "../../component/Navbar";
-import Footer from "../../component/Footer";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-  ReferenceLine,
-} from "recharts";
+import Navbar from "../../components/Navbar";
+import Footer from "../../components/Footer";
+import { ForecastChart, EquityChart, PortfolioPieChart, MetricsTable } from "../../components/charts";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
+import { ProgressBar, Filter, Select } from "../../components/ui";
 
-/* Dow 30 – Forecast algos – Back-test algos */
+// Available stock tickers and algorithm options
 const DOW30 = [
   "AAPL",
   "AMGN",
@@ -65,13 +56,13 @@ const Dropdown = ({
   title: string;
   children: React.ReactNode;
 }) => (
-  /* `group` lets the chevron rotate on open */
+  // Expandable dropdown with rotating chevron
   <details className="group bg-[#14273F] rounded-lg text-white ring-1 ring-[#1B263B]">
-    {/* Header row */}
+    {/* Dropdown header with title and chevron */}
     <summary className="cursor-pointer px-5 py-3 flex items-center justify-between list-none">
       <h2 className="text-base font-semibold tracking-tight">{title}</h2>
 
-      {/* Chevron — rotates when open */}
+      {/* Chevron rotates 180deg when dropdown opens */}
       <svg
         className="h-4 w-4 shrink-0 transition-transform duration-200 group-open:rotate-180"
         viewBox="0 0 24 24"
@@ -87,19 +78,19 @@ const Dropdown = ({
       </svg>
     </summary>
 
-    {/* Body */}
+    {/* Dropdown content area */}
     <div className="px-5 py-4 border-t border-[#1B263B]">{children}</div>
   </details>
 );
 
-// Type for forecast data per ticker
+// Type definition for individual ticker forecast data
 type ForecastData = {
   historySeries: { date: string; price: number }[];
   forecastSeries: { date: string; price: number }[];
 };
 
 export default function Dashboard() {
-  /* ─ State ─ */
+  // Component state management
   const [tickers, setTickers] = useState<string[]>([]);
   const [algo, setAlgo] = useState(FORECAST_ALGOS[0]);
   const [btAlgo, setBtAlgo] = useState(BACKTEST_ALGOS[0]);
@@ -124,17 +115,17 @@ export default function Dashboard() {
 
   const toggle = (t: string) =>
     setTickers((p) => {
-      if (p.includes(t)) return p.filter((x) => x !== t); // uncheck
+      if (p.includes(t)) return p.filter((x) => x !== t); // Remove if already selected
       if (p.length >= 8) {
-        // limit
+        // Enforce max selection limit
         window.alert("You can select a maximum of 8 stocks.");
         return p;
       }
-      return [...p, t]; // add
+      return [...p, t]; // Add to selection
     });
 
   const runBacktest = async () => {
-    if (!tickers.length || loading) return; // guard
+    if (!tickers.length || loading) return; // Prevent multiple simultaneous runs
 
     setLoading(true);
     setProg(5);
@@ -143,7 +134,7 @@ export default function Dashboard() {
     setMetrics(null);
 
     try {
-      /* ① POST /api/train -------------------------------------------------- */
+      // Start training job on backend
       const res = await fetch("/api/train", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -161,7 +152,7 @@ export default function Dashboard() {
       const { job_id } = await res.json();
       if (!job_id) throw new Error("No job_id returned");
 
-      /* ② Poll /api/train/{id} every 2 s ------------------------------- */
+      // Poll training progress every 2 seconds
       let pct = 8;
       const poll = setInterval(async () => {
         try {
@@ -180,11 +171,11 @@ export default function Dashboard() {
             alert(data.detail || "Training failed");
             setLoading(false);
           } else {
-            pct = Math.min(pct + 6, 95); // ▲ smoother bar
+            pct = Math.min(pct + 6, 95); // Increment progress smoothly
             setProg(pct);
           }
         } catch (e) {
-          clearInterval(poll); // ▲ stop on fetch error
+          clearInterval(poll); // Stop polling on connection error
           console.error(e);
           alert("Lost connection to backend");
           setLoading(false);
@@ -231,7 +222,6 @@ export default function Dashboard() {
     }
     
     const payload = await res.json();
-    console.log(`${ticker} payload:`, payload); // Debug log
     
     // Check if we got the expected data structure
     if (!payload.history_dates || !payload.history_values || 
@@ -266,8 +256,58 @@ export default function Dashboard() {
   }
 }
 
-/* merge once at the end */
+// Update state with all forecast results at once
 setForecastDataMap(tempDataMap);
+
+// Save forecast session to database for history tracking
+try {
+  const forecasts = Object.entries(tempDataMap).filter(([_, data]) => 
+    data.historySeries.length > 0 && data.forecastSeries.length > 0
+  );
+  
+  if (forecasts.length > 0) {
+    const logPayload = {
+      type: 'forecast',
+      stocks: forecasts.map(([ticker, _]) => ticker),
+      model: algo.toUpperCase(),
+      parameters: {
+        algorithm: algo,
+        start_date: start,
+        end_date: end,
+        history_days: histDays,
+        forecast_days: forecastDays,
+        tickers: forecasts.map(([ticker, _]) => ticker)
+      },
+      results: {
+        predictions: forecasts.flatMap(([ticker, data]) => 
+          data.forecastSeries.map(point => ({
+            ticker,
+            date: point.date,
+            price: point.price
+          }))
+        )
+      },
+      charts: Object.fromEntries(forecasts.map(([ticker, data]) => [
+        ticker, {
+          history: data.historySeries,
+          forecast: data.forecastSeries
+        }
+      ]))
+    };
+    
+    // Send forecast data to logging endpoint
+    await fetch('/api/forecast/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(logPayload)
+    });
+    
+  }
+} catch (logError) {
+  console.error('Failed to log combined forecast:', logError);
+  // Continue even if logging fails
+}
+
 setFLoading(false);
     } catch (e) {
       console.error(e);
@@ -280,14 +320,14 @@ setFLoading(false);
     <div className="min-h-screen bg-[#0D1B2A] text-white flex flex-col">
       <Navbar />
       <main id="hero"></main>
-      {/* ───── Main grid ───── */}
+      {/* Three-column layout: stocks, forecasting, backtesting */}
       <main className="flex-1 pt-[72px] pb-20 px-4 lg:px-16 grid grid-cols-1 lg:grid-cols-[14rem_repeat(2,minmax(0,1fr))] gap-4">
-        {/* LEFT ░ Tick list */}
+        {/* Left sidebar: stock selection */}
         <aside className="bg-[#14273F] rounded-xl p-6 flex flex-col overflow-y-auto">
-          {/* ► Filters container */}
+          {/* Stock selection filters */}
           <h2 className="text-lg font-semibold mb-6">DOW30 Stocks</h2>
 
-          {/* 2. Dow‑30 ticker checklist */}
+          {/* DOW 30 stock checkboxes */}
           <p className="text-xs text-gray-400 mb-2">
             Select up to <span className="text-[#4CC9F0] font-semibold">8</span>{" "}
             stocks
@@ -345,7 +385,7 @@ setFLoading(false);
                 </svg>
               </summary>
 
-              {/* pop-up */}
+              {/* Parameter configuration popup */}
               <div className="param-pop absolute right-0 mt-2 space-y-4 z-10">
                 <button
                   onClick={() => {
@@ -360,14 +400,14 @@ setFLoading(false);
                   <Select
                     value={histDays}
                     onChange={(e) => setHistDays(+e.target.value)}
-                    opts={HIST_DAYS}
+                    options={HIST_DAYS}
                   />
                 </Filter>
                 <Filter label="Forecast Days">
                   <Select
                     value={forecastDays}
                     onChange={(e) => setFcastDays(+e.target.value)}
-                    opts={FORECAST_DAYS}
+                    options={FORECAST_DAYS}
                   />
                 </Filter>
               </div>
@@ -377,11 +417,11 @@ setFLoading(false);
             <Select
               value={algo}
               onChange={(e) => setAlgo(e.target.value)}
-              opts={FORECAST_ALGOS}
+              options={FORECAST_ALGOS}
             />
           </Filter>
 
-          {/* ─── Train button ─── */}
+          {/* Start forecasting button */}
           <button
             onClick={runForecast}
             disabled={fLoading || !tickers.length}
@@ -390,20 +430,12 @@ setFLoading(false);
             {fLoading ? "Running…" : "Train"}
           </button>
 
-          {/* progress bar */}
+          {/* Progress indicator during training */}
           {fLoading && (
-            <div className="mt-5 relative h-3 rounded-full bg-[#1B263B]">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-[#3A86FF] to-[#4CC9F0] transition-[width] duration-300"
-                style={{ width: `${fProg}%` }}
-              />
-              <span className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold text-[#E0E8F9]">
-                {fProg.toFixed(0)}%
-              </span>
-            </div>
+            <ProgressBar progress={fProg} className="mt-5 h-3" />
           )}
 
-          {/* ─── Charts area - multiple small charts ─── */}
+          {/* Forecast results visualization area */}
           <div className="flex-1 overflow-y-auto mt-6 space-y-4">
             {forecastingTickers.length > 0 &&
             !fLoading &&
@@ -411,88 +443,30 @@ setFLoading(false);
               forecastingTickers.length ? (
               <div className="grid grid-cols-1 gap-4">
                 {forecastingTickers.map((ticker) => {
-  /* pull THIS ticker’s data */
-  const data = forecastDataMap[ticker];
+                  const data = forecastDataMap[ticker];
 
-  /* if not yet fetched → placeholder */
-  if (!data) {
-    return (
-      <div key={ticker} className="bg-[#0d1b2a]/50 rounded-lg p-3 h-[172px] flex items-center justify-center">
-        <span className="text-xs text-gray-400">Loading…</span>
-      </div>
-    );
-  }
+                  if (!data) {
+                    return (
+                      <div key={ticker} className="bg-[#0d1b2a]/50 rounded-lg p-3 h-[172px] flex items-center justify-center">
+                        <span className="text-xs text-gray-400">Loading…</span>
+                      </div>
+                    );
+                  }
 
-  /* per-ticker series */
-  const { historySeries, forecastSeries } = data;
-  const allData   = [...historySeries, ...forecastSeries];
-  const splitDate = historySeries.at(-1)!.date;
-  const tickInt   = Math.max(1, Math.floor(allData.length / 4));
+                  const { historySeries, forecastSeries } = data;
 
-  return (
-    <div key={ticker} className="bg-[#0d1b2a]/50 rounded-lg p-3">
-      <h4 className="text-sm font-semibold text-cyan-300 mb-2">{ticker}</h4>
-
-      <ResponsiveContainer width="100%" height={140}>
-        <LineChart data={allData} margin={{ top: 5, right: 20, bottom: 25, left: 45 }}>
-          <XAxis
-            dataKey="date"
-            interval={tickInt}
-            tickFormatter={(d) => {
-              const dt = new Date(d);
-              return `${(dt.getMonth() + 1).toString().padStart(2, "0")}/${dt
-                .getDate()
-                .toString()
-                .padStart(2, "0")}`;
-            }}
-            stroke="#7C8BAC"
-            fontSize={10}
-            tick={{ fill: "#7C8BAC" }}
-            axisLine={{ stroke: "#7C8BAC" }}
-          />
-          <YAxis
-            domain={["dataMin - 5", "dataMax + 5"]}
-            width={40}
-            stroke="#7C8BAC"
-            fontSize={10}
-            tick={{ fill: "#7C8BAC" }}
-            axisLine={{ stroke: "#7C8BAC" }}
-            tickFormatter={(v) => v.toFixed(0)}
-          />
-          <Tooltip
-            contentStyle={{
-              background: "#1B263B",
-              border: "none",
-              borderRadius: "4px",
-              color: "#E0E8F9",
-              fontSize: "12px",
-            }}
-            formatter={(v: number) => v.toFixed(2)}
-            labelFormatter={(l) => l.slice(0, 10)}
-          />
-
-          {/* solid blue for full series */}
-          <Line
-            dataKey="price"
-            type="monotone"
-            stroke="#4CC9F0"
-            strokeWidth={2}
-            dot={false}
-            isAnimationActive={false}
-          />
-
-          {/* dotted red separator */}
-          <ReferenceLine
-            x={splitDate}
-            stroke="#FF6B6B"
-            strokeDasharray="3 3"
-            strokeWidth={2}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-})}
+                  return (
+                    <div key={ticker}>
+                      <h4 className="text-sm font-semibold text-cyan-300 mb-2">{ticker}</h4>
+                      <ForecastChart
+                        historySeries={historySeries}
+                        forecastSeries={forecastSeries}
+                        height={140}
+                        showTitle={false}
+                      />
+                    </div>
+                  );
+                })}
 
               </div>
             ) : (
@@ -506,7 +480,7 @@ setFLoading(false);
             )}
           </div>
         </section>
-        {/* RIGHT ░ Back-test pane */}
+        {/* Right sidebar: backtesting controls and results */}
         <aside className="bg-[#14273F] rounded-xl p-6 flex flex-col">
           <div className="flex items-start justify-between mb-6">
             <h2 className="text-lg font-semibold">Run Back-test</h2>
@@ -544,21 +518,21 @@ setFLoading(false);
                   <Select
                     value={btHistDays}
                     onChange={(e) => setBtHistDays(+e.target.value)}
-                    opts={BTHIST_DAYS}
+                    options={BTHIST_DAYS}
                   />
                 </Filter>
                 <Filter label="Look-back Days">
                   <Select
                     value={lookBack}
                     onChange={(e) => setLookBack(+e.target.value)}
-                    opts={LOOKBACKS}
+                    options={LOOKBACKS}
                   />
                 </Filter>
                 <Filter label="Eval Window">
                   <Select
                     value={evalWin}
                     onChange={(e) => setEvalWin(+e.target.value)}
-                    opts={EVALWINS}
+                    options={EVALWINS}
                   />
                 </Filter>
                 <Filter label="Transaction Cost">
@@ -577,7 +551,7 @@ setFLoading(false);
             <Select
               value={btAlgo}
               onChange={(e) => setBtAlgo(e.target.value)}
-              opts={BACKTEST_ALGOS}
+              options={BACKTEST_ALGOS}
             />
           </Filter>
 
@@ -589,85 +563,22 @@ setFLoading(false);
             {loading ? "Running…" : "Train"}
           </button>
 
-          {/* Progress + output placeholders */}
+          {/* Training progress and results */}
           {loading && (
-            <div className="mt-5 relative h-4 rounded-full bg-[#1B263B]">
-              {/* filled part */}
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-[#3A86FF] to-[#4CC9F0] transition-[width] duration-300"
-                style={{ width: `${prog}%` }}
-              />
-              {/* % text */}
-              <span className="absolute inset-0 flex items-center justify-center text-[12px] font-semibold text-[#E0E8F9]">
-                {prog.toFixed(0)}%
-              </span>
-            </div>
+            <ProgressBar progress={prog} className="mt-5" />
           )}
 
-          {/* After training finishes you'd conditionally render pie + table */}
-          {/* ───── RESULTS ─────────────────────────────────────────── */}
+          {/* Backtest results visualization */}
           {!loading && prog === 100 && nav && weights && metrics && (
-            <>
-              {/* ① Final Portfolio Weights (Pie) */}
-              <h3 className="mt-6 mb-2 text-sm font-semibold text-cyan-300">
-                Final Portfolio Weights
-              </h3>
-              <div className="h-52 bg-[#0d1b2a]/50 rounded-xl p-3">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={Object.entries(weights).map(([name, value]) => ({
-                        name,
-                        value,
-                      }))}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="40%" /* leave room on the right for legend */
-                      cy="50%"
-                      outerRadius={85}
-                      innerRadius={38}
-                      stroke="#0d1b2a"
-                      strokeWidth={2}
-                      paddingAngle={2}
-                    >
-                      {Object.keys(weights).map((_, i) => {
-                        /* monochrome-variant palette: cyan → indigo range */
-                        const hues = [190, 200, 210, 220, 230, 240];
-                        return (
-                          <Cell
-                            key={i}
-                            fill={`hsl(${hues[i % hues.length]} 70% ${
-                              55 - i * 3
-                            }%)`}
-                          />
-                        );
-                      })}
-                    </Pie>
-                    <Tooltip
-                      formatter={(v: number) => (v * 100).toFixed(1) + "%"}
-                      contentStyle={{
-                        background: "#1B263B",
-                        border: "none",
-                        color: "#E0E8F9",
-                      }}
-                      itemStyle={{ color: "#E0E8F9" }}
-                    />
-                    <Legend
-                      verticalAlign="middle"
-                      align="right"
-                      layout="vertical"
-                      iconType="circle"
-                      wrapperStyle={{
-                        fontSize: "0.75rem",
-                        lineHeight: "1.25rem",
-                        color: "#E0E8F9",
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+            <div className="space-y-6 mt-6">
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-cyan-300">
+                  Final Portfolio Weights
+                </h3>
+                <PortfolioPieChart weights={weights} height={200} showTitle={false} />
               </div>
 
-              {/* ② NAV / PnL Curve (Line) */}
+              {/* Portfolio equity curve over time */}
               <h3 className="mt-8 mb-2 text-sm font-semibold text-cyan-300">
                 Equity Curve (PnL)
               </h3>
@@ -682,7 +593,7 @@ setFLoading(false);
                   >
                     <XAxis
                       dataKey="date"
-                      tickFormatter={(d) => d.slice(2, 7)} /* YY-MM */
+                      tickFormatter={(d) => d.slice(2, 7)} /* Format dates as YY-MM */
                       minTickGap={40}
                       stroke="#7C8BAC"
                       fontSize={12}
@@ -708,91 +619,18 @@ setFLoading(false);
                 </ResponsiveContainer>
               </div>
 
-              {/* ③ Performance Metrics */}
-              <h3 className="mt-8 mb-2 text-sm font-semibold text-cyan-300">
-                Performance Metrics
-              </h3>
-              <div className="bg-[#0d1b2a]/50 rounded-xl p-4 overflow-auto text-sm">
-                <table className="w-full">
-                  <thead>
-                    <tr className="text-left text-gray-400">
-                      <th className="pb-1">Metric</th>
-                      <th className="pb-1 text-right">Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      ["Return", metrics.Return],
-                      ["Annual Ret.", metrics.AnnualReturn],
-                      ["Daily Vol.", metrics.DailyVol],
-                      ["Annual Vol.", metrics.AnnualVol],
-                      ["Sharpe", metrics.Sharpe],
-                      ["Sortino", metrics.Sortino],
-                    ].map(([k, v]) => (
-                      <tr key={k} className="border-t border-[#1B263B]">
-                        <td className="py-1 text-gray-300">{k}</td>
-                        <td className="py-1 text-right font-semibold">
-                          {typeof v === "number" ? v.toFixed(3) : v ?? "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-cyan-300">
+                  Performance Metrics
+                </h3>
+                <MetricsTable metrics={metrics} showTitle={false} />
               </div>
-            </>
+            </div>
           )}
         </aside>
       </main>
 
       <Footer />
-    </div>
-  );
-}
-
-/* ───── Tiny helpers ───── */
-function Filter({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs text-gray-400">{label}</span>
-      {children}
-    </div>
-  );
-}
-
-function Select({
-  value,
-  onChange,
-  opts,
-}: {
-  value: any;
-  onChange: any;
-  opts: (string | number)[];
-}) {
-  return (
-    <div className="relative inline-block w-full">
-      <select
-        value={value}
-        onChange={onChange}
-        className="select-dark appearance-none pr-8 w-full"
-      >
-        {opts.map((o) => (
-          <option key={o}>{o}</option>
-        ))}
-      </select>
-      <svg
-        className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 text-gray-400 transform -translate-y-1/2"
-        viewBox="0 0 20 20"
-        fill="none"
-        stroke="currentColor"
-      >
-        <path d="M6 8l4 4 4-4" strokeWidth="2" strokeLinecap="round" />
-      </svg>
     </div>
   );
 }

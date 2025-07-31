@@ -22,37 +22,27 @@ ROOT   = HERE.parents[2]                  # project root
 RESULT = HERE / "results"; RESULT.mkdir(exist_ok=True)
 sys.path.append(str(ROOT / "backend"))    # for utils if needed
 
-from models.PortfolioPolicyNetwork.model import PortfolioPolicyNetwork  # noqa: E402
-from models.PortfolioPolicyNetwork.record import compute_metrics        # noqa: E402
+from models.PortfolioPolicyNetwork.model import PortfolioPolicyNetwork  
+from models.PortfolioPolicyNetwork.record import compute_metrics      
 
-# ─── defaults / hyper-params ──────────────────────────────────────────────
-BACKLOOK     = 252          # look-back window
-EVAL_WINDOW  = 5            # holding period
-TC_RATE      = 0.002        # one-way commission
-DEVICE       = "cpu"        # "cuda" if model supports it
+BACKLOOK     = 252         
+EVAL_WINDOW  = 5          
+TC_RATE      = 0.002       
+DEVICE       = "cpu"       
 VERBOSE_EVERY = 20
-# ──────────────────────────────────────────────────────────────────────────
 
 
-# ╭────────────────────── Public API entry point ───────────────────────╮ #
 def run(
     prices: pd.DataFrame,
     lookback: int = BACKLOOK,
     eval_win: int = EVAL_WINDOW,
-    eta: float = 0.02,            # kept for uniform FastAPI signature (unused)
+    eta: float = 0.02,           
     tc: float = TC_RATE,
     device: str = DEVICE,
     write_files: bool = False,
     tag: str | None = None,
 ) -> Tuple[pd.Series, Dict[str, float], Dict[str, float]]:
-    """
-    Back-test PPN on **adjusted-close prices**.
-    Returns
-    -------
-    nav      : pd.Series  – Net-asset-value (starts at 1.0)
-    weights  : dict       – Final portfolio weights
-    metrics  : dict       – Performance metrics (Sharpe, Sortino, …)
-    """
+
     prices = prices.sort_index()                    # assure monotonic
     tickers = prices.columns.tolist()
     dates  = prices.index.to_numpy()
@@ -71,14 +61,14 @@ def run(
                    n_assets=n_assets,
                    device=device)
 
-    # ── initial portfolio state ────────────────────────────────────────
+    # initial portfolio state
     w_prev   = np.full(n_assets, 1 / n_assets, dtype=np.float32)
     log_nav  = 0.0
     nav      = [1.0]
     rlog: List[float] = []
     turns: List[float] = []
 
-    # ── main loop ──────────────────────────────────────────────────────
+    # main loop
     for step, t0 in enumerate(range(lookback, len(prices_np), eval_win), 1):
         hist = prices_np[t0 - lookback : t0]           # (lookback, N, 1)
         print(f"DEBUG Step {step}: hist shape: {hist.shape}")
@@ -152,7 +142,7 @@ def run(
 
         w_prev = w_t.copy()
 
-    # ── package outputs ───────────────────────────────────────────────
+    # package outputs
     nav_dates = dates[lookback - 1 : lookback - 1 + len(nav)]
     nav_series = pd.Series(nav, index=nav_dates, name="NAV")
 
@@ -163,7 +153,6 @@ def run(
         _dump_csvs(nav_series, rlog, tag)
 
     return nav_series, final_weights, metrics
-# ╰─────────────────────────────────────────────────────────────────────╯
 
 
 def _dump_csvs(nav: pd.Series, rets: List[float], tag: str | None):
@@ -180,7 +169,7 @@ def _dump_csvs(nav: pd.Series, rets: List[float], tag: str | None):
     print("PPN CSVs written to", RESULT)
 
 
-# ╭──────────────────────────── CLI helper ─────────────────────────────╮ #
+# CLI helper
 def _cli():
     import yfinance as yf
 

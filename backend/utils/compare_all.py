@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pandas as pd
 
-# ─── Paths ─────────────────────────────────────────────────────────
 try:
     ROOT = Path(__file__).resolve().parents[1]  # normal run
 except NameError:
@@ -25,7 +24,7 @@ MODELS       = ROOT / "models"
 METRIC_JSON  = ROOT / "utils" / "Metrics.json"
 OUTTXT       = ROOT / "utils" / "performance_summary.txt"
 
-# ─── 1. Run each record.py ─────────────────────────────────────────
+# 1. Run each record.py
 print("\nExecuting every models/*/record.py …\n")
 for rec in MODELS.rglob("record.py"):
     rel = rec.relative_to(ROOT)
@@ -37,14 +36,14 @@ for rec in MODELS.rglob("record.py"):
     else:
         print("finished")
 
-# ─── 2. Load consolidated JSON ─────────────────────────────────────
+# 2. Load consolidated JSON
 if not METRIC_JSON.exists():
     sys.exit(f"\n{METRIC_JSON} not found. Did the record scripts write it?")
 
 with open(METRIC_JSON, encoding="utf-8") as fh:
     metrics_dict: dict[str, dict[str, str]] = json.load(fh)
 
-# ─── 3. Build DataFrame of all metrics ────────────────────────────
+# 3. Build DataFrame of all metrics
 rows, all_keys = [], set()
 for model, met in metrics_dict.items():
     all_keys.update(met.keys())
@@ -53,7 +52,7 @@ for model, met in metrics_dict.items():
 cols = ["Model"] + sorted(all_keys)
 df   = pd.DataFrame(rows)[cols].fillna("-")
 
-# ─── 4. Pretty fixed-width table ──────────────────────────────────
+# 4. Pretty fixed-width table
 width = {c: max(len(c), df[c].astype(str).str.len().max()) + 2 for c in df.columns}
 
 def fmt(val, w):

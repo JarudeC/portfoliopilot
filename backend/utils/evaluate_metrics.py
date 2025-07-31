@@ -1,3 +1,4 @@
+# Portfolio performance metrics calculation and aggregation
 import json, pandas as pd, numpy as np, math
 from pathlib import Path
 
@@ -20,11 +21,11 @@ def calc_metrics(daily: pd.Series, trading_days=252):
         "Sortino": f"{sortino:.2f}" if sortino != float("inf") else "∞"
     }
 
-# Centralised metrics store
+# Centralized metrics storage
 all_metrics = {}
 metrics_path = Path("utils/Metrics.json")
 
-# Loop through model folders
+# Process each model's results
 for model_dir in Path("models").iterdir():
     results_dir = model_dir / "results"
     if not results_dir.exists():

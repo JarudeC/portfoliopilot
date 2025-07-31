@@ -1,9 +1,5 @@
 """
-CA-GMVP (clustered GMVP) · v8  (22 Jul 2025)
-────────────────────────────────────────────────────────────────────────────
-• Library call:   nav, w, m = run(prices_df, lookback=252, eval_win=5, …)
-• CLI utility:    python train.py --tickers AAPL MSFT --hist 730
-                  python train.py --tickers AAPL MSFT --start 2015-01-01
+CA-GMVP (clustered GMVP)
 """
 
 from __future__ import annotations
@@ -16,22 +12,20 @@ import numpy as np
 import pandas as pd
 
 HERE     = Path(__file__).resolve()
-BACKEND  = HERE.parents[2]        # backend/
+BACKEND  = HERE.parents[2]        # backend
 RESULTS  = HERE.parent / "results"
 sys.path.append(str(BACKEND))     # so `models` is importable
 
 from models.GMVP_Clustering.model import CAMinVar                     # noqa: E402
 from models.GMVP_Clustering.record import compute_metrics_from_nav    # noqa: E402
 
-# ─── hyper-params (defaults) ──────────────────────────────────────────────
+# hyper-params (defaults)
 VERBOSE_EVERY  = 1
 BACKLOOK       = 252           # rolling window (days)
 EVAL_WINDOW    = 5             # rebalance freq  (days)
 CLIP_LIMIT     = 0.30          # ±30 % cap on fwd returns
 CLEAN_NA_TOL   = 0.20          # drop cols with >20 % NaNs
 TC_RATE        = 0.002         # 20 bp round-trip cost
-# ──────────────────────────────────────────────────────────────────────────
-
 
 def _good_cols(look: pd.DataFrame) -> pd.Index:
     """Filter out columns with too many gaps / extreme moves."""
@@ -44,7 +38,7 @@ def _good_cols(look: pd.DataFrame) -> pd.Index:
     return look.columns[~bad]
 
 
-# ╭─────────────────────── Public API ─────────────────────────╮ #
+# Public API
 def run(
     prices: pd.DataFrame,
     lookback: int = BACKLOOK,
@@ -138,7 +132,6 @@ def run(
         _dump_csvs(nav_series, ret_chunks, wlog, clusters, max_cluster, tag)
 
     return nav_series, final_weights, metrics
-# ╰─────────────────────────────────────────────────────────────╯
 
 
 def _dump_csvs(
@@ -160,7 +153,7 @@ def _dump_csvs(
     pd.concat(wlog, axis=1).T.to_csv(RESULTS / f"Weights_log_{suffix}.csv")
 
 
-# ╭──────────────────────── CLI helper ─────────────────────────╮ #
+# CLI helper
 def _cli() -> None:
     import yfinance as yf
 

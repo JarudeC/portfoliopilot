@@ -1,8 +1,5 @@
-"""Simple Transformer-based forecaster (fallback implementation).
-
-This is a simplified transformer implementation that doesn't require external packages.
-Uses PyTorch's built-in transformer layers to create a basic autoformer-like model.
-"""
+# Simple Transformer forecaster using PyTorch built-in layers
+# Lightweight implementation without external dependencies
 
 from __future__ import annotations
 
@@ -18,9 +15,7 @@ from . import base
 
 __all__ = ["forecast"]
 
-# ───────────────────────────────────────────────────────────────────
-#  Simple Transformer Model
-# ───────────────────────────────────────────────────────────────────
+# Simple Transformer model class
 class SimpleTransformer(nn.Module):
     def __init__(self, seq_len: int = 60, pred_len: int = 14, d_model: int = 64, nhead: int = 4, num_layers: int = 2):
         super().__init__()
@@ -68,15 +63,11 @@ class SimpleTransformer(nn.Module):
         
         return x
 
-# ───────────────────────────────────────────────────────────────────
 #  hyper‑params – tweakable via kwargs if you extend the signature
-# ───────────────────────────────────────────────────────────────────
+
 SEQ_LEN = 60   # look‑back window (reduced for simpler model)
 
-
-# ───────────────────────────────────────────────────────────────────
-#  Public API
-# ───────────────────────────────────────────────────────────────────
+# Public API
 
 def forecast(
     req: base.ForecastRequest,

@@ -1,9 +1,9 @@
-# models/GMVP_Clustering/api.py
+# GMVP Clustering portfolio optimization API wrapper
 from __future__ import annotations
 from typing import Tuple, Dict
 import pandas as pd
 
-from .train import run as _run     # your v8 train.run()
+from .train import run as _run
 
 def run(
     prices: pd.DataFrame,
@@ -16,7 +16,7 @@ def run(
     write_files: bool = False,
     tag: str | None = None,
 ) -> Tuple[pd.Series, Dict[str, float], Dict[str, float]]:
-    """Uniform façade for FastAPI – silently ignores `eta`."""
+    """GMVP clustering portfolio optimization with uniform API interface"""
     return _run(
         prices       = prices,
         lookback     = lookback,

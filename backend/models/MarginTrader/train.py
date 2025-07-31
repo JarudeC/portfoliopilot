@@ -12,7 +12,7 @@ from .env.agent import DRLAgent
 from .env.margin_env import MarginTradingEnv
 from .record import compute_metrics
 
-# ── Defaults ────────────────────────────────────────────────────────────────
+# Defaults
 LOOKBACK_DEF    = 252
 EVAL_WIN_DEF    = 5
 TC_DEF          = 0.002
@@ -38,7 +38,7 @@ def run(
     set_random_seed(seed)
     torch.manual_seed(seed)
 
-    # ─── 1) Clean & reshape prices ───────────────────────────────────────
+    # 1) Clean & reshape prices
     prices = (
         prices.sort_index()
               .dropna(how="all")
@@ -51,7 +51,7 @@ def run(
     df_price = prices.stack().reset_index()
     df_price.columns = ["date", "tic", "close"]
 
-    # ─── 2) Train/trade split ────────────────────────────────────────────
+    # 2) Train/trade split
     all_dates = sorted(df_price["date"].unique())
     if len(all_dates) <= lookback + eval_win:
         raise ValueError(f"Need >{lookback+eval_win} unique dates; got {len(all_dates)}.")
@@ -59,7 +59,7 @@ def run(
     train_df = df_price[df_price["date"] < split_date]
     trade_df = df_price[df_price["date"] >= split_date]
 
-    # ─── 3) Build env kwargs, plugging in UI’s tc ───────────────────────
+    # 3) Build env kwargs, plugging in UI’s tc
     tickers   = prices.columns.tolist()
     stock_dim = len(tickers)
     env_kwargs = {
@@ -77,7 +77,7 @@ def run(
         "max_leverage":        1.5,
     }
 
-    # ─── 4) Quick A2C training ──────────────────────────────────────────
+    # 4) A2C training
     train_env = MarginTradingEnv(df=train_df, **env_kwargs).get_sb_env()[0]
     agent     = DRLAgent(env=train_env)
     model = agent.get_model(
@@ -92,7 +92,7 @@ def run(
     )
     model.learn(total_timesteps=total_steps, progress_bar=False)
 
-    # ─── 5) Back-test & collect output ─────────────────────────────────
+    # 5) Back-test & collect output
     trade_env = MarginTradingEnv(df=trade_df, **env_kwargs)
     account_df, _, state_df = DRLAgent.DRL_prediction(model, trade_env)
 
@@ -121,7 +121,7 @@ def run(
     nav = nav / nav.iloc[0]
     nav.name = "NAV"
 
-    # ─── 6) Derive final weights from the last env state ──────────────
+    # 6) Derive final weights from the last env state
     # state_df comes from save_state_memory(), with columns like "AAPL_h" and "AAPL_c"
     if isinstance(state_df, pd.DataFrame) and any(c.endswith("_h") for c in state_df.columns):
         last = state_df.iloc[-1]
@@ -138,7 +138,6 @@ def run(
     else:
         # fallback to equal-weight if we can’t extract holdings
         weights = {t: 1.0 / len(tickers) for t in tickers}
-
-    # ─── 7) Metrics & return ───────────────────────────────────────────
+        
     metrics = compute_metrics(nav)
     return nav, weights, metrics

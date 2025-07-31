@@ -1,20 +1,25 @@
-import Navbar from "../component/Navbar";
-import Footer from "../component/Footer";
-import Image from "next/image";
+// Landing page with hero section and main navigation
+"use client";
+
+import Navbar from "../components/Navbar";
+import Footer from "../components/Footer";
+import Link from "next/link";
+import { useAuth } from "@/contexts/AuthContexts";
 
 export default function Home() {
+  const { user, loading } = useAuth();
   return (
     <div className="min-h-screen bg-[#0D1B2A] text-white scroll-smooth">
       <Navbar />
       <main id="hero"></main>
 
-      {/* ─────────────── Hero (with MP4 background) ─────────────── */}
+      {/* Hero section with video background */}
       <section className="relative w-full min-h-[90vh] flex items-center justify-center bg-[#0D1B2A] overflow-hidden">
-        {/* Curved side masks */}
+        {/* Curved overlay masks for visual effect */}
         <div className="pointer-events-none absolute -left-40 top-0 h-full w-[500px] bg-[#0D1B2A] rounded-r-full" />
         <div className="pointer-events-none absolute -right-40 top-0 h-full w-[500px] bg-[#0D1B2A] rounded-l-full" />
 
-        {/* Background Video */}
+        {/* Background video loop */}
         <video
           className="absolute inset-0 w-full h-full object-cover opacity-20"
           autoPlay
@@ -26,7 +31,7 @@ export default function Home() {
           Your browser does not support the video tag.
         </video>
 
-        {/* Hero copy */}
+        {/* Main hero content and CTA buttons */}
         <div className="relative z-10 max-w-5xl px-6 text-center">
           <h1 className="text-4xl md:text-5xl font-bold mb-6">
             Forecast Smarter. Invest Better.
@@ -36,18 +41,20 @@ export default function Home() {
             strategies — all in one dashboard.
           </p>
           <div className="flex justify-center gap-4">
-            <a
+            <Link
               href="/dashboard"
               className="bg-[#4CC9F0] hover:bg-[#3A86FF] text-[#0D1B2A] font-semibold px-6 py-3 rounded-full transition"
             >
               Start Forecasting
-            </a>
-            <a
-              href="/api/auth/signin"
-              className="border border-[#4CC9F0] text-white hover:bg-[#14273F] hover:text-[#4CC9F0] px-6 py-3 rounded-full transition"
-            >
-              Sign In to Save
-            </a>
+            </Link>
+            {!loading && !user && (
+              <Link
+                href="/auth/login"
+                className="border border-[#4CC9F0] text-white hover:bg-[#14273F] hover:text-[#4CC9F0] px-6 py-3 rounded-full transition"
+              >
+                Login to Save
+              </Link>
+            )}
           </div>
         </div>
       </section>
@@ -145,15 +152,14 @@ export default function Home() {
           Ready to elevate your research?
         </h2>
         <p className="text-lg text-gray-300 mb-10 max-w-2xl">
-          Sign in to save your forecasts or jump right in and start testing your
-          strategies today.
+          Jump right in and start testing your strategies today.
         </p>
-        <a
-          href="/api/auth/signin"
+        <Link
+          href={user ? "/dashboard" : "/auth/login"}
           className="bg-[#4CC9F0] hover:bg-[#3A86FF] text-[#0D1B2A] font-semibold px-8 py-4 rounded-full transition"
         >
           Get Started
-        </a>
+        </Link>
       </section>
 
       {/* ─────────────────────── Footer ─────────────────────── */}

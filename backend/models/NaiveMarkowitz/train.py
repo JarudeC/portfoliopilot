@@ -18,15 +18,12 @@ import numpy as np, pandas as pd, argparse, warnings, sys
 from pathlib import Path
 from typing import Tuple, Dict, List
 
-from .model import Naive_Markowitz               # original class
+from .model import Naive_Markowitz            
 from .record import compute_metrics_from_nav
 
 warnings.filterwarnings("ignore")
 np.random.seed(43)
 
-# ──────────────────────────────────────────────────────────────────────────
-# Core callable
-# ──────────────────────────────────────────────────────────────────────────
 def run(
     prices: pd.DataFrame,
     lookback: int               = 252,
@@ -36,25 +33,6 @@ def run(
     write_files: bool           = False,
     tag: str | None             = None,
 ) -> Tuple[pd.Series, Dict[str,float], Dict[str,float]]:
-    """
-    Execute the Naive-Markowitz back-test.
-
-    Parameters
-    ----------
-    prices      : (T, N) adjusted close price DataFrame (index = date)
-    lookback    : rolling window length (days)
-    eval_win    : holding / rebalance period (days)
-    eta         : risk-aversion hyper-parameter
-    tc          : round-trip transaction-cost rate
-    write_files : if True, dumps NAV / returns / turnovers CSVs
-    tag         : extra suffix for filenames (optional)
-
-    Returns
-    -------
-    nav         : Series of cumulative NAV (starts at 1.0)
-    weights     : dict {ticker: final_weight}
-    metrics     : dict {Sharpe, CAGR, maxDD, …}  via utils.record
-    """
     hist = prices.dropna().copy()
     dates = hist.index.to_series()
 
@@ -82,14 +60,12 @@ def run(
         turnovers.append(turnover)
         cost      = turnover * tc
 
-                # ── forward returns & NAV segment ──────────────────────────────
         fr = mdl.forward_returns()
         s  = (fr["return"] if isinstance(fr, pd.DataFrame) and "return" in fr
               else fr.squeeze())
         r_fwd = s.copy()
         r_fwd.iloc[0] -= cost
 
-        # ① clean / cap returns  .......................................
         CAP = 0.1
         r_fwd = (
             r_fwd.replace([np.inf, -np.inf], np.nan)   # drop rogue values
@@ -98,7 +74,6 @@ def run(
         )
         daily_rets.append(r_fwd)
 
-        # ② accumulate in **log space** to avoid overflow .............
         nav_last   = nav[-1]
         nav_last  *= np.exp(np.log1p(r_fwd).sum())      # single exp, no cumprod
         nav.append(nav_last)
@@ -118,10 +93,7 @@ def run(
 
     return nav_series, weights, metrics
 
-
-# ──────────────────────────────────────────────────────────────────────────
 # Helper: optional CSV writers (keeps original filenames)
-# ──────────────────────────────────────────────────────────────────────────
 def _dump_csvs(nav: pd.Series,
                daily_rets: List[pd.Series],
                turnovers: List[float],
@@ -149,10 +121,7 @@ def _dump_csvs(nav: pd.Series,
     pd.DataFrame({"Turnover": turnovers})\
         .to_csv(out_dir / f"Turnovers_NaiveMarkowitz_{suffix}.csv", index=False)
 
-
-# ──────────────────────────────────────────────────────────────────────────
 # Optional CLI for ad-hoc runs (fetches yfinance instead of CSV)
-# ──────────────────────────────────────────────────────────────────────────
 def _cli():
     import yfinance as yf
 

@@ -1,23 +1,11 @@
-# models/NaiveMarkowitz/api.py
-"""
-Thin façade for FastAPI (and any other caller).
-
-Why a separate file?
-────────────────────
-• Keeps a **uniform interface** across *all* algorithms:
-      from models.<Algo>.api import run
-  Every model folder (GMVP, CA-GMVP, MarginTrader…) will expose the very
-  same `run()` signature, so the FastAPI dispatcher can stay generic.
-
-• Avoids re-import loops: FastAPI only needs this tiny wrapper; the heavy
-  stuff in train.py is imported lazily when `run()` is called.
-"""
+# Naive Markowitz portfolio optimization API wrapper
+# Provides uniform interface for FastAPI integration
 
 from __future__ import annotations
 from typing import Tuple, Dict
 import pandas as pd
 
-# single-line re-export ↓  – all real work lives in train.py
+# Import main implementation
 from .train import run as _run
 
 

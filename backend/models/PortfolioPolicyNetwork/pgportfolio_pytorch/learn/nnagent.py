@@ -1,9 +1,6 @@
-# pgportfolio_pytorch/learn/nnagent.py
-# ------------------------------------
 # CNN-TCN + LSTM agent rewritten for PyTorch (eager, TF-free).
 # The public API -- especially `decide_by_history(...)` --
 # stays identical so models/PortfolioPolicyNetwork/model.py
-# does **not** need to change.
 
 from __future__ import annotations
 import json, pathlib, math
@@ -28,31 +25,27 @@ class NNAgent:
     device : "cpu" | "cuda"
     """
 
-    # ─────────── construction ────────────────────────────────────────
     def __init__(self, config: dict, device: str = "cpu"):
         self.cfg = config
         self.dev = torch.device(device)
 
-        # network -----------------------------------------------------
         feat  = config["input"]["feature_number"]
         rows  = config["input"]["coin_number"]
         cols  = config["input"]["window_size"]
         drop  = config["training"]["dropout"]
         self.net = CNN(feat, rows, cols, drop).to(self.dev)
 
-        # loss hyper-params ------------------------------------------
         self.gamma = config["training"]["gamma"]
         self.alpha = config["training"]["alpha"]
         self.commission = config["trading"]["trading_consumption"]
 
-        # optimiser & sched ------------------------------------------
         lr   = config["training"]["learning_rate"]
         self.opt = optim.Adam(self.net.parameters(), lr=lr)
         self.decay_steps = config["training"]["decay_steps"]
         self.decay_rate  = config["training"]["decay_rate"]
         self.global_step = 0
 
-    # ─────────── public API (unchanged) ──────────────────────────────
+    # public API
     def decide_by_history(
         self, history: np.ndarray, prev_w_full: np.ndarray
     ) -> np.ndarray:
@@ -63,30 +56,28 @@ class NNAgent:
         """
         self.net.eval()
         with torch.no_grad():
-            # ─── ensure float32 & correct device ──────────
             hist_t = (
                 torch.from_numpy(history.astype(np.float32))
-                     .permute(2, 1, 0)   # F,R,T
-                     .unsqueeze(0)       # B,F,R,T
+                     .permute(2, 1, 0)   
+                     .unsqueeze(0)       
                      .to(self.dev)
             )
             prev = (
                 torch.from_numpy(prev_w_full[1:].astype(np.float32))
-                     .unsqueeze(0)       # B,rows
+                     .unsqueeze(0)       
                      .to(self.dev)
             )
             print(f"DEBUG decide_by_history: hist_t.shape = {hist_t.shape}")
             print(f"DEBUG decide_by_history: prev.shape = {prev.shape}")
             print(f"DEBUG decide_by_history: prev_w_full.shape = {prev_w_full.shape}")
-            w = self.net(hist_t, prev)      # (B, rows+1)
+            w = self.net(hist_t, prev)      
             return w.squeeze(0).cpu().numpy()
 
-    # ─────────── training helper (single batch) ─────────────────────
     def train_batch(
         self,
-        x: np.ndarray,                # (B,F,R,T)
-        y_next: np.ndarray,           # (B, R)   – next-period price ratios
-        prev_w: np.ndarray,           # (B, R)   – previous weights (no cash)
+        x: np.ndarray,               
+        y_next: np.ndarray,          
+        prev_w: np.ndarray,        
     ) -> float:
         """
         Performs one forward/backward step and updates network weights.
@@ -114,9 +105,8 @@ class NNAgent:
                 raise RuntimeError(f"train_batch mismatch: x_t {x_t.shape}, wprev {wprev.shape}")
 
 
-        # ---- forward ------------------------------------------------
         print(f"DEBUG train_batch: About to call net forward with x_t={x_t.shape}, wprev={wprev.shape}")
-        w = self.net(x_t, wprev)              # (B, R+1)
+        w = self.net(x_t, wprev)           
         print(f"DEBUG train_batch: net forward completed, w.shape = {w.shape}")
 
         # cash index 0, asset cols 1:                            (B,R)
@@ -124,14 +114,13 @@ class NNAgent:
         price_vec = torch.cat([torch.ones(B,1, device=self.dev), y_t], dim=1)
 
         # turn-over cost
-        turnover = torch.abs(w_assets - wprev).sum(dim=1)        # (B,)
+        turnover = torch.abs(w_assets - wprev).sum(dim=1)        
 
         # portfolio growth vector
         pv = (w * price_vec).sum(dim=1)
         pv = pv * (1 - self.commission * turnover).clamp_min(1e-8)
         pv = pv.clamp_min(1e-8)                    # <- never allow <=0
 
-        # ------------ losses -----------------------------------------
         neg_log_growth = -torch.log(pv).mean()
         var_penalty    = torch.var(torch.log(pv), unbiased=False)
         cost_penalty   = turnover.mean()
@@ -150,7 +139,7 @@ class NNAgent:
             print("[NaN DEBUG] loss:", loss.detach().cpu().numpy())
             raise RuntimeError("NaN detected in train_batch")
 
-        # ---- optimise -----------------------------------------------
+        # optimization step
         # Store some weights before optimization to check if they're changing
         before_weights = self.net.decision_i.weight.data.clone()
         
@@ -182,7 +171,6 @@ class NNAgent:
 
         return float(loss.detach().cpu())
 
-    # ─────────── checkpointing --------------------------------------
     def save(self, path: str | pathlib.Path):
         torch.save(self.net.state_dict(), path)
 

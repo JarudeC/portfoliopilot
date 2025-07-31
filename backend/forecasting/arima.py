@@ -1,11 +1,5 @@
-"""Enhanced ARIMA forecaster with automatic order selection.
-
-* Uses AIC/BIC criteria for optimal order selection
-* Implements proper statistical validation
-* Robust error handling and fallback mechanisms
-* Returns four parallel lists that match the payload FastAPI expects:
-    history_dates, history_values, forecast_dates, forecast_values
-"""
+# ARIMA forecasting with automatic order selection
+# Uses AIC criteria and statistical validation with robust fallbacks
 
 from __future__ import annotations
 
@@ -22,9 +16,7 @@ from statsmodels.stats.diagnostic import acorr_ljungbox
 from .base import ForecastRequest, load_series
 
 
-# ──────────────────────────────────────────────────────────────────────────
-#  Helper functions for ARIMA order selection
-# ──────────────────────────────────────────────────────────────────────────
+# Helper functions for ARIMA order selection
 
 def _determine_differencing(series: pd.Series, max_d: int = 2) -> int:
     """Determine optimal differencing order using ADF test."""
@@ -49,7 +41,7 @@ def _determine_differencing(series: pd.Series, max_d: int = 2) -> int:
 
 
 def _select_best_arima_order(series: pd.Series, max_p: int = 3, max_q: int = 3) -> tuple:
-    """Select best ARIMA order using AIC criterion."""
+    """Select optimal ARIMA order using AIC"""
     # Determine differencing order
     d = _determine_differencing(series)
     print(f"Selected differencing order d={d}")

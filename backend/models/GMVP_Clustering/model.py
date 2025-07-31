@@ -25,7 +25,6 @@ EPS = 1e-5  # ridge term for covariance stabilisation
 
 
 class CAMinVar:
-    # ───────────────────────── initialisation ──────────────────────────
     def __init__(
         self,
         rebalance_freq: int = 5,
@@ -51,7 +50,6 @@ class CAMinVar:
         self.random_state = random_state
         self.weights_: pd.Series | None = None
 
-    # ───────────────────────── utilities ───────────────────────────────
     @staticmethod
     def _gmvp_w(cov: np.ndarray) -> np.ndarray:
         """Global-minimum-variance weights with ridge & pseudo-inverse fallback."""
@@ -70,7 +68,6 @@ class CAMinVar:
             w = np.full(n, 1 / n)  # equal-weight fallback
         return w
 
-    # ───────────────────────── clustering ──────────────────────────────
     def _bounded_kmeans(self, X: np.ndarray) -> list[list[int]]:
         n = X.shape[0]
         k = max(self.n_clusters, math.ceil(n / self.max_cluster_size))
@@ -84,7 +81,7 @@ class CAMinVar:
         _, clusters = bkm.fit(X, np.ones(n))
         return clusters
 
-    # ───────────────────────── core API ────────────────────────────────
+    # core API
     def fit(self, prices: pd.DataFrame) -> "CAMinVar":
         """
         Parameters
@@ -93,7 +90,7 @@ class CAMinVar:
             **Daily return matrix** (rows = dates, cols = tickers).  The most
             recent `self.lookback` rows are used.
         """
-        rets = prices.iloc[-self.lookback:]  # ← removed redundant .pct_change()
+        rets = prices.iloc[-self.lookback:] 
         rets = (
             rets.replace([np.inf, -np.inf], np.nan)
             .ffill()

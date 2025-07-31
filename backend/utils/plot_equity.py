@@ -1,20 +1,15 @@
-# utils/plot_equity.py
-"""
-Plot cumulative PnL curves for every model that has a results/pnl_*.csv,
-aligned on a shared integer-based trading-day axis so comparisons are fair.
-"""
+# Portfolio equity curve plotting utility
+# Generates comparative PnL visualizations for all models
 
 from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# ───────────────────────── fixed paths ────────────────────────────────
 THIS_DIR   = Path(__file__).resolve().parent
 ROOT_DIR   = THIS_DIR.parent
 MODELS_DIR = ROOT_DIR / "models"
 OUT_PNG    = THIS_DIR / "equity_curves.png"
 
-# ───────────────────────── helpers ────────────────────────────────────
 def load_one_pnl(csv_path: Path) -> pd.Series:
     """
     Return a cumulative-PnL Series whose *index is dates* (if present)

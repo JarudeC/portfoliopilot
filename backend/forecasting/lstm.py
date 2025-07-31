@@ -1,12 +1,5 @@
-"""LSTM forecaster (quick CPU‑only implementation).
-
-* Normalises the price series with `MinMaxScaler`.
-* Trains a 2‑layer LSTM (hidden=64) for `epochs=20` by default.
-* Recursive prediction for `horizon` future steps.
-
-The signature and payload mirror `arima.forecast()` so the FastAPI
-adapter can treat all synchronous forecasters identically.
-"""
+# CPU-only LSTM forecaster with MinMaxScaler normalization
+# 2-layer LSTM with recursive prediction for multi-step forecasting
 
 from __future__ import annotations
 
@@ -22,9 +15,7 @@ from sklearn.preprocessing import MinMaxScaler
 from . import base
 
 
-# ────────────────────────────────────────────
-#  tiny PyTorch model
-# ────────────────────────────────────────────
+# Simple PyTorch LSTM model
 class _LSTM(nn.Module):
     def __init__(self, n_features: int = 1, hidden: int = 64, layers: int = 2):
         super().__init__()
@@ -36,12 +27,10 @@ class _LSTM(nn.Module):
         return self.fc(out[:, -1, :])
 
 
-# ────────────────────────────────────────────
-#  main entry‑point
-# ────────────────────────────────────────────
+# Main forecasting function
 
 def _prepare(series: np.ndarray, window: int):
-    """Scale → windowed (X, y) tensors."""
+    """Scale data and create windowed sequences"""
     scaler = MinMaxScaler()
     data = scaler.fit_transform(series.reshape(-1, 1))
 
@@ -62,23 +51,23 @@ def forecast(
     epochs: int = 20,
     lr: float = 1e-3,
 ) -> Tuple[List[str], List[float], List[str], List[float]]:
-    """Run an LSTM forecast and return four parallel lists."""
-    # 1. load historical prices
+    """Train LSTM model and generate forecasts"""
+    # Load historical data
     series = base.load_series(req.ticker, req.start, req.end)
     hist_vals = series.values.astype("float32")
 
-    # 2. validate data length and adjust window if needed
+    # Validate data length
     if len(hist_vals) < window:
-        window = max(10, len(hist_vals) // 2)  # Use smaller window for short series
+        window = max(10, len(hist_vals) // 2)
         print(f"Warning: Adjusting window size to {window} due to insufficient data")
     
     if len(hist_vals) < window:
         raise ValueError(f"Insufficient data: {len(hist_vals)} points, need at least {window}")
 
-    # 3. prepare data
+    # Prepare training data
     X, y, scaler = _prepare(hist_vals, window)
 
-    # 3. train
+    # Train model
     model = _LSTM()
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.MSELoss()
@@ -90,7 +79,7 @@ def forecast(
         loss.backward()
         opt.step()
 
-    # 4. recursive forecast
+    # Generate recursive forecasts
     model.eval()
     preds = []
     seq = scaler.transform(hist_vals[-window:].reshape(-1, 1))
@@ -105,11 +94,11 @@ def forecast(
 
     preds = scaler.inverse_transform(np.array(preds).reshape(-1, 1)).flatten().tolist()
 
-    # 5. build date lists with proper business days
+    # Build output date lists
     last_date = series.index[-1].date()
     hist_dates = [d.strftime("%Y-%m-%d") for d in series.index.date]
     
-    # Generate business day dates for forecast
+    # Generate forecast dates
     fc_dates = pd.bdate_range(
         start=last_date + timedelta(days=1), 
         periods=req.horizon

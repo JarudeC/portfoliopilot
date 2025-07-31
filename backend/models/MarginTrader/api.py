@@ -1,4 +1,4 @@
-# models/MarginTrader/api.py
+# Margin Trader reinforcement learning API wrapper
 from __future__ import annotations
 from typing import Tuple, Dict
 import pandas as pd
@@ -9,7 +9,7 @@ def run(
     prices: pd.DataFrame,
     lookback: int    = 252,
     eval_win: int    = 5,
-    eta: float       = 0.02,   # ignored
+    eta: float       = 0.02,   # ignored for compatibility
     tc: float        = 0.002,
     total_steps: int = 20_000,
     **kwargs,

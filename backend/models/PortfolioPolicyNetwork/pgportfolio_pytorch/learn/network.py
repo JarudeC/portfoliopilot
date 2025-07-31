@@ -1,7 +1,4 @@
-# pgportfolio_pytorch/learn/network.py
-# ------------------------------------
 # PyTorch re-implementation of the PPN CNN-TCN-LSTM backbone
-# (Shreenivas & Velu, 2020)
 
 from __future__ import annotations
 from typing import Tuple
@@ -62,21 +59,21 @@ class CNN(nn.Module):
         super().__init__()
         self.rows, self.cols = rows, cols
 
-        # ─── TCN blocks ─────────────────────────────────────────
+        # TCN blocks
         self.tcn0 = TemporalBlock(feat,  8, (1, 3), (1, 1), dropout)
         self.tcn1 = TemporalBlock(8,   16, (1, 3), (1, 2), dropout)
         self.tcn2 = TemporalBlock(16,  16, (1, 3), (1, 4), dropout)
 
-        # ─── squeeze conv (collapse time dim) ───────────────────
+        # squeeze conv (collapse time dim)
         self.squeeze_conv = nn.Conv2d(16, 16, (1, cols))
         nn.init.normal_(self.squeeze_conv.weight, std=1e-2)
         nn.init.zeros_(self.squeeze_conv.bias)
 
-        # ─── LSTM branch ────────────────────────────────────────
+        # LSTM branch
         self.lstm = nn.LSTM(input_size=1, hidden_size=16,
                             batch_first=True, num_layers=1)
 
-        # ─── decision heads ─────────────────────────────────────
+        # decision heads
         in_ch = 16 + 16 + 1  # conv_feat + lstm_feat + prev_w
         self.decision_i = nn.Conv2d(in_ch, 1, 1)
         self.decision_s = nn.Conv2d(in_ch, 1, 1)
@@ -86,7 +83,7 @@ class CNN(nn.Module):
             nn.init.xavier_uniform_(m.weight)
             nn.init.uniform_(m.bias, -0.1, 0.1)  # Small random bias to break symmetry
 
-        # ─── learnable cash bias ─────────────────────────────────
+        # learnable cash bias
         self.btc_bias = nn.Parameter(torch.zeros(1, 1, 1, 1))
 
     def forward(self, x: torch.Tensor, prev_w: torch.Tensor) -> torch.Tensor:
@@ -106,26 +103,26 @@ class CNN(nn.Module):
         denom = x[:, :, :, -1:].clamp_min(1e-8).expand_as(x)
         x = x / denom
 
-        # ─── TCN path ───────────────────────────────────────────
+        # TCN path
         y = self.tcn2(self.tcn1(self.tcn0(x)))
         y = F.relu(self.squeeze_conv(y))      # (B,16,rows,1)
         y = y.permute(0, 2, 3, 1)             # → (B, rows,1,16)
 
-        # ─── LSTM path ──────────────────────────────────────────
+        # LSTM path
         lst = x.permute(0, 2, 3, 1).reshape(B*rows, self.cols, 1)
         out,_ = self.lstm(lst)
         lf = out[:, -1, :].view(B, rows, 1, 16)
 
-        # ─── concat conv + lstm + prev_w ───────────────────────
-        pw  = prev_w.view(B, rows, 1, 1)               # (B,rows,1,1)
+        # concat conv + lstm + prev_w
+        pw  = prev_w.view(B, rows, 1, 1)               
         # Ensure all tensors have consistent shapes for concatenation
         assert y.shape[:3] == lf.shape[:3] == pw.shape[:3], f"Shape mismatch: y={y.shape}, lf={lf.shape}, pw={pw.shape}"
-        cat = torch.cat([y, lf, pw], dim=3)                   # (B,rows,1,33)
+        cat = torch.cat([y, lf, pw], dim=3)              
         cb  = self.btc_bias.expand(B,1,1,cat.size(3))
-        cat = torch.cat([cb, cat], dim=1)                     # (B,rows+1,1,33)
+        cat = torch.cat([cb, cat], dim=1)                   
 
         # to channel-first for conv2d
-        cat = cat.permute(0, 3, 1, 2)                         # (B,33,rows+1,1)
+        cat = cat.permute(0, 3, 1, 2)                      
 
         print(f"DEBUG network: cat.shape before decisions = {cat.shape}")
         wi_raw = self.decision_i(cat)
@@ -133,8 +130,8 @@ class CNN(nn.Module):
         print(f"DEBUG network: wi_raw.shape = {wi_raw.shape}, ws_raw.shape = {ws_raw.shape}")
         
         # More careful squeezing to ensure correct output shape
-        wi = wi_raw.view(B, -1)     # (B,rows+1) 
-        ws = ws_raw.view(B, -1)     # (B,rows+1)
+        wi = wi_raw.view(B, -1)    
+        ws = ws_raw.view(B, -1)    
         print(f"DEBUG network: wi.shape after squeeze = {wi.shape}, ws.shape = {ws.shape}")
         
         # Apply temperature scaling to sharpen distributions

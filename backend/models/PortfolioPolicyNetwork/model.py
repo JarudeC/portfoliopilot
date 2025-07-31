@@ -11,8 +11,8 @@ class PortfolioPolicyNetwork:
     def __init__(
         self,
         *,
-        lookback: int,              # ← window size from UI
-        n_assets: int,              # ← len(tickers) from UI
+        lookback: int,             
+        n_assets: int,              
         config_path: str | Path | None = None,
         device: str = "cpu",
     ):

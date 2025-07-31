@@ -1,11 +1,5 @@
-# backend/main.py   ──  uvicorn main:app --reload --port 8000
-"""FastAPI entry‑point for
-  • Portfolio back‑tests (/train …)
-  • Price forecasting (/forecast …)
-
-We deliberately keep the two job lanes isolated so that long‑running
-Autoformer forecasts never block RL back‑tests.
-"""
+# FastAPI backend for portfolio backtesting and price forecasting
+# Provides REST endpoints for running portfolio algorithms and time series models
 
 from __future__ import annotations
 
@@ -17,17 +11,14 @@ import numpy as np
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from utils.data_loader import load_prices        # unchanged
+from utils.data_loader import load_prices
 
-# ─── forecasting package imports (local) ────────────────────────────────
+# Forecasting model imports
 from forecasting import arima, autoformer, base, lstm
 
-# ────────────────────────────────────────────────────────────────────────
 app = FastAPI()
 
-# ======================================================================
-# 1) PORTFOLIO‑TRAINING  (unchanged logic – just namespaced)
-# ======================================================================
+# Portfolio algorithm mapping
 ALGO_MAP: Dict[str, str] = {
     "Naive Markowitz": "models.NaiveMarkowitz.api",
     "GVMP": "models.GMVP_Clustering.api",
@@ -90,11 +81,9 @@ def train_status(jid: str):
     return _train_jobs[jid]
 
 
-# ======================================================================
-# 2) FORECASTING – cleaner, dictionary‑driven implementation
-# ======================================================================
+# Price forecasting endpoints
 
-# map algo → callable[ForecastRequest, Tuple[dates, hist_values, fc_dates, fc_values]]
+# Forecasting algorithm mappings
 _SYNC_FORECASTERS: Dict[str, Callable[[base.ForecastRequest], Tuple[List[str], List[float], List[str], List[float]]]] = {
     "arima": arima.forecast,
     "lstm": lstm.forecast,
@@ -119,7 +108,7 @@ def _payload(hd: List[str], hv: List[float], fd: List[str], fv: List[float]) -> 
 
 @app.post("/forecast/{algo}")
 def forecast(algo: Literal["arima", "lstm", "autoformer"], req: base.ForecastRequest, bg: BackgroundTasks):
-    """Route dispatcher – behaves synchronously for cheap models, async for heavy."""
+    """Route dispatcher - runs fast models synchronously, heavy models asynchronously"""
 
     if algo in _SYNC_FORECASTERS:
         try:
@@ -128,7 +117,7 @@ def forecast(algo: Literal["arima", "lstm", "autoformer"], req: base.ForecastReq
         except Exception as e:
             raise HTTPException(500, f"Forecasting error: {str(e)}")
 
-    # async branch
+    # Handle async models
     if algo in _ASYNC_FORECASTERS:
         task_id = uuid4().hex
         _forecast_jobs[task_id] = {"status": "running"}

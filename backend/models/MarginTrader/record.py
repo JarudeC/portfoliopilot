@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# ── Paths ──────────────────────────────────────────────────────────
+# Paths
 HERE          = Path(__file__).resolve().parent        # …/MarginTrader
 ROOT          = Path(__file__).resolve().parents[2]    # repo root
 RESULTS_DIR   = HERE / "results"
@@ -18,7 +18,7 @@ CSV_FILE      = RESULTS_DIR / "pnl_margin_trader.csv"  # must exist
 METRICS_PATH  = ROOT / "utils" / "Metrics.json"
 MODEL_NAME    = "margin_trader"
 
-# ── Metric helpers ─────────────────────────────────────────────────
+# Metric helpers
 def compute_metrics(
     portfolio_values: pd.Series,
     trading_days: int = 252,
@@ -95,7 +95,7 @@ def update_metrics(model: str, metrics: dict[str, str], path: Path) -> None:
     path.write_text(json.dumps(existing, indent=4), encoding="utf-8")
 
 
-# ── Main ───────────────────────────────────────────────────────────
+# Main
 if __name__ == "__main__":
     if not CSV_FILE.exists():
         raise FileNotFoundError(f"{CSV_FILE} not found. Run train.py first.")

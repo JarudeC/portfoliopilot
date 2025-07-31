@@ -5,18 +5,14 @@ import json, os
 from pathlib import Path
 import pandas as pd, numpy as np
 
-# ------------------------------------------------------------------
-# »> paths that work from **any** working-directory
-# ------------------------------------------------------------------
-HERE  = Path(__file__).resolve().parent              # …/models/PortfolioPolicyNetwork
-ROOT  = HERE.parent.parent                           # project root
+HERE  = Path(__file__).resolve().parent              
+ROOT  = HERE.parent.parent                         
 
-results_dir  = HERE / "results"                      # …/results/
+results_dir  = HERE / "results"                    
 csv_file     = results_dir / "pnl_PPN.csv"
 metrics_path = ROOT / "utils" / "Metrics.json"
 model_name   = "PPN"
 
-# ------------------------------------------------------------------
 def compute_metrics(portfolio_values: pd.Series,
                     trading_days: int = 252,
                     rf: float = 0.0) -> dict:
@@ -49,9 +45,6 @@ def update_metrics(model_name: str, metrics: dict, path: Path):
     with path.open("w", encoding="utf-8") as f:
         json.dump(all_metrics, f, indent=4)
 
-# ------------------------------------------------------------------
-# main
-# ------------------------------------------------------------------
 if not csv_file.exists():
     raise FileNotFoundError(f"{csv_file} not found. Run train.py first.")
 
