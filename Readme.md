@@ -80,7 +80,7 @@ npm run dev
 
 ## How to Use
 
-https://github.com/user-attachments/assets/ebbf0e22-f293-47b5-ba1a-dc2154f525e9
+https://github.com/user-attachments/assets/3539e57b-f59a-4d6d-98c4-d1f29f1865ed
 
 1. **Sign In/Login** - Authenticate using OAuth through Supabase
 2. **Dashboard** - Navigate to the main dashboard
