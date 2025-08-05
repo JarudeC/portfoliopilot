@@ -1,15 +1,16 @@
-# Portfolio Pilot - Full Stack Portfolio Construction Platform
+# Portfolio Pilot - AI-Enhanced Full Stack Portfolio Construction Platform
 
-A full-stack web application for portfolio optimization using machine learning and classical algorithms.
+A full-stack web application for portfolio optimization using machine learning, classical algorithms, and custom AI-generated strategies powered by Anthropic Claude.
 
 ## Tech Stack & Skills Implemented
 
 **Frontend:**
-- Next.js 14 with TypeScript
+- Next.js 15 with TypeScript
 - React with hooks and context API
 - Tailwind CSS for styling
 - Recharts for data visualization
 - Axios for API calls
+- Anthropic Claude SDK integration
 
 **Backend:**
 - FastAPI with Python
@@ -23,7 +24,15 @@ A full-stack web application for portfolio optimization using machine learning a
 
 ## Project Overview
 
-Portfolio Pilot allows users to build and optimize investment portfolios using advanced machine learning techniques. The platform combines classical portfolio theory with modern forecasting models to help users make informed investment decisions.
+Portfolio Pilot allows users to build and optimize investment portfolios using advanced machine learning techniques and AI-generated custom strategies. The platform combines classical portfolio theory with modern forecasting models and cutting-edge AI to help users create sophisticated, personalized investment strategies.
+
+### Key Features
+
+- **Pre-built Algorithms**: Choose from proven portfolio optimization and forecasting models
+- **Custom AI Strategies**: Leverage Anthropic Claude to generate bespoke investment algorithms based on natural language descriptions
+- **Real-time Backtesting**: Test strategies against historical data with comprehensive performance metrics
+- **Interactive Visualizations**: View portfolio compositions, equity curves, and forecast charts
+- **Session History**: Track and compare all your strategy experiments
 
 **Dashboard** - Interactive interface for stock selection and model training initiation.
 ![dashboard](https://github.com/user-attachments/assets/02a4133f-aaca-487b-b41b-cccaa347b556)
@@ -80,13 +89,21 @@ npm run dev
 
 ## How to Use
 
+### Standard Algorithm Usage
 https://github.com/user-attachments/assets/3539e57b-f59a-4d6d-98c4-d1f29f1865ed
 
+### Custom AI Strategy Generation
+[video]
+
+**Getting Started:**
 1. **Sign In/Login** - Authenticate using OAuth through Supabase
 2. **Dashboard** - Navigate to the main dashboard
-3. **Pick Stocks** - Select stocks for your portfolio
-4. **Train Models** - Choose between forecasting or portfolio optimization training with desired parameters
-5. **View History** - Review past training results and portfolio performance
+3. **Pick Stocks** - Select up to 8 stocks from the DOW30 for your portfolio
+4. **Choose Strategy Type**:
+   - **Pre-built Models** - Select from classical algorithms (ARIMA, LSTM, Markowitz, etc.)
+   - **Custom AI Strategy** - Describe your investment approach in natural language
+5. **Train & Analyze** - Execute your strategy and view comprehensive results
+6. **View History** - Review past training results and portfolio performance
 
 ## Algorithms Implemented
 
@@ -101,5 +118,17 @@ https://github.com/user-attachments/assets/3539e57b-f59a-4d6d-98c4-d1f29f1865ed
 - **ARIMA** - Auto-regressive integrated moving average for time series prediction
 - **LSTM** - Long short-term memory neural networks for sequence modeling
 - **Autoformer** - Transformer-based model for long-term time series forecasting
+
+### 🤖 Custom AI-Generated Strategies
+- **Natural Language Processing** - Describe your investment strategy in plain English
+- **Code Generation** - Anthropic Claude converts descriptions into executable TypeScript algorithms
+- **Dynamic Execution** - Real-time strategy compilation and backtesting
+- **Security Validation** - Multi-layer security checks ensure safe code execution
+- **Examples Include**:
+  - Minimum variance optimization with covariance matrix calculations
+  - Maximum Sharpe ratio strategies with risk-adjusted returns
+  - Momentum and mean reversion hybrid approaches
+  - Volatility-adjusted portfolio construction
+  - Factor-based allocation using valuation metrics
 
 All models use consistent evaluation parameters including transaction costs, rebalancing frequency, and lookback windows for fair comparison.

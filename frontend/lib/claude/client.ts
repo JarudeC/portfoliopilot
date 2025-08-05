@@ -1,0 +1,590 @@
+import { StockData, GenerationResult } from './generator';
+import { SecurityConfig } from './security';
+import { 
+  ClaudeError, 
+  ClaudeApiError, 
+  NetworkError, 
+  ValidationError, 
+  TimeoutError, 
+  RateLimitError, 
+  ParseError,
+  ErrorFactory,
+  ErrorUtils
+} from './errors';
+
+// Client-side Request/Response Interfaces
+export interface GenerateRequest {
+  userDescription: string;
+  stockData: StockData[];
+  mode: 'forecast' | 'backtest';
+  securityConfig?: Partial<SecurityConfig>;
+  forecastDays?: number; // Only used for forecast mode
+  dashboardParams?: {
+    backtestDays?: number;
+    lookbackDays?: number;
+    evaluationWindow?: number;
+    transactionCost?: number;
+    historyDays?: number;
+  };
+}
+
+export interface GenerateResponse {
+  success: boolean;
+  result?: GenerationResult;
+  error?: string;
+  rateLimitInfo?: {
+    remaining: number;
+    resetTime: number;
+  };
+}
+
+export interface ApiErrorResponse {
+  success: false;
+  error: string;
+  statusCode: number;
+}
+
+// Legacy client error type for backward compatibility
+enum ClientErrorType {
+  NETWORK_ERROR = 'NETWORK_ERROR',
+  TIMEOUT_ERROR = 'TIMEOUT_ERROR',
+  RATE_LIMIT_ERROR = 'RATE_LIMIT_ERROR',
+  VALIDATION_ERROR = 'VALIDATION_ERROR',
+  API_ERROR = 'API_ERROR',
+  PARSE_ERROR = 'PARSE_ERROR',
+  UNKNOWN_ERROR = 'UNKNOWN_ERROR',
+  DUPLICATE_REQUEST = 'DUPLICATE_REQUEST'
+}
+
+// Legacy wrapper for backward compatibility
+class ClaudeClientError extends ClaudeError {
+  constructor(
+    public type: ClientErrorType,
+    message: string,
+    public statusCode?: number,
+    retryable: boolean = false,
+    public rateLimitInfo?: { remaining: number; resetTime: number }
+  ) {
+    super(
+      message,
+      type,
+      'api' as any, // Will be mapped to appropriate category
+      'medium' as any, // Will be mapped to appropriate severity
+      retryable
+    );
+    this.name = 'ClaudeClientError';
+  }
+}
+
+// Loading State Management
+interface LoadingState {
+  isLoading: boolean;
+  requestId?: string;
+  startTime?: number;
+  progress?: 'validating' | 'generating' | 'processing';
+}
+
+// Request Management Configuration
+const CLIENT_CONFIG = {
+  REQUEST_TIMEOUT: 30000, // 30 seconds
+  RATE_LIMIT_WINDOW: 60000, // 1 minute
+  MAX_REQUESTS_PER_WINDOW: 8, // Slightly lower than server-side to be safe
+  MAX_RETRIES: 3,
+  RETRY_DELAY_BASE: 1000, // 1 second base delay
+  MAX_DESCRIPTION_LENGTH: 2000,
+  MAX_STOCK_COUNT: 100,
+};
+
+// Request tracking for rate limiting and deduplication
+class RequestTracker {
+  private requests: Map<string, number> = new Map();
+  private requestCounts: Map<string, { count: number; resetTime: number }> = new Map();
+  private pendingRequests: Map<string, Promise<GenerateResponse>> = new Map();
+
+  // Generate request hash for deduplication
+  private generateRequestHash(request: GenerateRequest): string {
+    const normalized = {
+      description: request.userDescription.trim().toLowerCase(),
+      symbols: request.stockData.map(s => s.symbol).sort(),
+    };
+    return btoa(JSON.stringify(normalized));
+  }
+
+  // Check if request is duplicate and return existing promise if so
+  checkDuplicateRequest(request: GenerateRequest): Promise<GenerateResponse> | null {
+    const hash = this.generateRequestHash(request);
+    return this.pendingRequests.get(hash) || null;
+  }
+
+  // Register new request
+  registerRequest(request: GenerateRequest, promise: Promise<GenerateResponse>): void {
+    const hash = this.generateRequestHash(request);
+    this.pendingRequests.set(hash, promise);
+    
+    // Clean up when request completes
+    promise.finally(() => {
+      this.pendingRequests.delete(hash);
+    });
+  }
+
+  // Check rate limit
+  checkRateLimit(): { allowed: boolean; remaining: number; resetTime: number } {
+    const now = Date.now();
+    const key = 'client-rate-limit';
+    const existing = this.requestCounts.get(key);
+
+    if (!existing || now >= existing.resetTime) {
+      const resetTime = now + CLIENT_CONFIG.RATE_LIMIT_WINDOW;
+      this.requestCounts.set(key, { count: 1, resetTime });
+      return { allowed: true, remaining: CLIENT_CONFIG.MAX_REQUESTS_PER_WINDOW - 1, resetTime };
+    }
+
+    if (existing.count >= CLIENT_CONFIG.MAX_REQUESTS_PER_WINDOW) {
+      return { allowed: false, remaining: 0, resetTime: existing.resetTime };
+    }
+
+    existing.count++;
+    this.requestCounts.set(key, existing);
+    return { 
+      allowed: true, 
+      remaining: CLIENT_CONFIG.MAX_REQUESTS_PER_WINDOW - existing.count, 
+      resetTime: existing.resetTime 
+    };
+  }
+}
+
+const requestTracker = new RequestTracker();
+
+// Loading state management
+class LoadingStateManager {
+  private states: Map<string, LoadingState> = new Map();
+  private listeners: Map<string, ((state: LoadingState) => void)[]> = new Map();
+
+  createRequest(requestId: string): void {
+    const state: LoadingState = {
+      isLoading: true,
+      requestId,
+      startTime: Date.now(),
+      progress: 'validating'
+    };
+    this.states.set(requestId, state);
+    this.notifyListeners(requestId, state);
+  }
+
+  updateProgress(requestId: string, progress: LoadingState['progress']): void {
+    const state = this.states.get(requestId);
+    if (state) {
+      state.progress = progress;
+      this.notifyListeners(requestId, state);
+    }
+  }
+
+  completeRequest(requestId: string): void {
+    const state = this.states.get(requestId);
+    if (state) {
+      state.isLoading = false;
+      state.progress = undefined;
+      this.notifyListeners(requestId, state);
+      
+      // Clean up after a delay
+      setTimeout(() => {
+        this.states.delete(requestId);
+        this.listeners.delete(requestId);
+      }, 1000);
+    }
+  }
+
+  getState(requestId: string): LoadingState | undefined {
+    return this.states.get(requestId);
+  }
+
+  onStateChange(requestId: string, callback: (state: LoadingState) => void): () => void {
+    if (!this.listeners.has(requestId)) {
+      this.listeners.set(requestId, []);
+    }
+    this.listeners.get(requestId)!.push(callback);
+
+    // Return unsubscribe function
+    return () => {
+      const callbacks = this.listeners.get(requestId);
+      if (callbacks) {
+        const index = callbacks.indexOf(callback);
+        if (index > -1) {
+          callbacks.splice(index, 1);
+        }
+      }
+    };
+  }
+
+  private notifyListeners(requestId: string, state: LoadingState): void {
+    const callbacks = this.listeners.get(requestId);
+    if (callbacks) {
+      callbacks.forEach(callback => {
+        try {
+          callback(state);
+        } catch (error) {
+          console.error('Error in loading state callback:', error);
+        }
+      });
+    }
+  }
+}
+
+const loadingStateManager = new LoadingStateManager();
+
+// Request validation using enhanced error types
+function validateRequest(request: GenerateRequest, requestId?: string): void {
+  if (!request.userDescription || typeof request.userDescription !== 'string') {
+    throw ErrorFactory.createValidationError(
+      'userDescription is required and must be a string',
+      'userDescription',
+      request.userDescription,
+      requestId
+    );
+  }
+
+  if (request.userDescription.length > CLIENT_CONFIG.MAX_DESCRIPTION_LENGTH) {
+    throw ErrorFactory.createValidationError(
+      `Description must be ${CLIENT_CONFIG.MAX_DESCRIPTION_LENGTH} characters or less`,
+      'userDescription',
+      request.userDescription,
+      requestId
+    );
+  }
+
+  // Validate mode
+  if (!request.mode || (request.mode !== 'forecast' && request.mode !== 'backtest')) {
+    throw ErrorFactory.createValidationError(
+      'mode is required and must be either "forecast" or "backtest"',
+      'mode',
+      request.mode,
+      requestId
+    );
+  }
+
+  // Validate forecastDays for forecast mode
+  if (request.mode === 'forecast' && request.forecastDays !== undefined) {
+    if (typeof request.forecastDays !== 'number' || !Number.isInteger(request.forecastDays) || request.forecastDays < 1 || request.forecastDays > 365) {
+      throw ErrorFactory.createValidationError(
+        'forecastDays must be an integer between 1 and 365',
+        'forecastDays',
+        request.forecastDays,
+        requestId
+      );
+    }
+  }
+
+  if (!Array.isArray(request.stockData)) {
+    throw ErrorFactory.createValidationError(
+      'stockData must be an array',
+      'stockData',
+      request.stockData,
+      requestId
+    );
+  }
+
+  if (request.stockData.length === 0) {
+    throw ErrorFactory.createValidationError(
+      'stockData array cannot be empty',
+      'stockData',
+      request.stockData,
+      requestId
+    );
+  }
+
+  if (request.stockData.length > CLIENT_CONFIG.MAX_STOCK_COUNT) {
+    throw ErrorFactory.createValidationError(
+      `Cannot process more than ${CLIENT_CONFIG.MAX_STOCK_COUNT} stocks`,
+      'stockData',
+      request.stockData,
+      requestId
+    );
+  }
+
+  // Validate each stock data item
+  request.stockData.forEach((stock, index) => {
+    if (!stock || typeof stock !== 'object') {
+      throw ErrorFactory.createValidationError(
+        `stockData[${index}] must be an object`,
+        `stockData[${index}]`,
+        stock,
+        requestId
+      );
+    }
+
+    if (!stock.symbol || typeof stock.symbol !== 'string') {
+      throw ErrorFactory.createValidationError(
+        `stockData[${index}].symbol is required and must be a string`,
+        `stockData[${index}].symbol`,
+        stock.symbol,
+        requestId
+      );
+    }
+
+    if (typeof stock.price !== 'number' || !isFinite(stock.price) || stock.price <= 0) {
+      throw ErrorFactory.createValidationError(
+        `stockData[${index}].price must be a positive number`,
+        `stockData[${index}].price`,
+        stock.price,
+        requestId
+      );
+    }
+  });
+}
+
+// Fetch with timeout
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeout: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new TimeoutError('Request timed out', timeout);
+    }
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      throw new NetworkError('Network request failed', error);
+    }
+    throw ErrorFactory.createFromFetchError(error);
+  }
+}
+
+// Response validation and parsing
+async function parseAndValidateResponse(response: Response): Promise<GenerateResponse> {
+  let responseData: any;
+
+  try {
+    responseData = await response.json();
+  } catch (parseError) {
+    throw new ParseError('Failed to parse response JSON', await response.text().catch(() => 'Unable to read response'));
+  }
+
+  // Handle rate limit response
+  if (response.status === 429) {
+    const retryAfter = response.headers.get('Retry-After');
+    const resetTime = response.headers.get('X-RateLimit-Reset');
+    const remaining = response.headers.get('X-RateLimit-Remaining');
+
+    throw new RateLimitError(
+      responseData.error || 'Rate limit exceeded',
+      remaining ? parseInt(remaining) : 0,
+      resetTime ? parseInt(resetTime) * 1000 : Date.now() + 60000
+    );
+  }
+
+  // Handle other API errors
+  if (!response.ok) {
+    throw ErrorFactory.createFromApiResponse(response, responseData);
+  }
+
+  // Validate response structure
+  if (typeof responseData !== 'object' || responseData === null) {
+    throw new ParseError('Invalid response format', JSON.stringify(responseData));
+  }
+
+  if (typeof responseData.success !== 'boolean') {
+    throw new ParseError('Response missing success field', JSON.stringify(responseData));
+  }
+
+  return responseData as GenerateResponse;
+}
+
+// Retry logic with exponential backoff using enhanced error types
+async function executeWithRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = CLIENT_CONFIG.MAX_RETRIES,
+  requestId?: string
+): Promise<T> {
+  let lastError: ClaudeError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      if (error instanceof ClaudeError) {
+        lastError = error;
+        
+        // Don't retry non-retryable errors
+        if (!error.isRetryable() || attempt === maxRetries) {
+          throw error;
+        }
+
+        // Calculate delay with exponential backoff and jitter
+        const delay = ErrorUtils.getRetryDelay(attempt + 1, CLIENT_CONFIG.RETRY_DELAY_BASE);
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        // Network or other unexpected errors
+        if (attempt === maxRetries) {
+          throw new NetworkError(
+            error.message || 'Network request failed',
+            error,
+            requestId
+          );
+        }
+        
+        const delay = CLIENT_CONFIG.RETRY_DELAY_BASE * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError!;
+}
+
+// Main API call function
+async function makeApiCall(request: GenerateRequest): Promise<GenerateResponse> {
+  const response = await fetchWithTimeout(
+    '/api/claude/generate',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    },
+    CLIENT_CONFIG.REQUEST_TIMEOUT
+  );
+
+  return parseAndValidateResponse(response);
+}
+
+// Main client function
+export async function generateStrategy(
+  description: string,
+  mode: 'forecast' | 'backtest',
+  stockData?: StockData[],
+  securityConfig?: Partial<SecurityConfig>,
+  forecastDays?: number,
+  dashboardParams?: {
+    backtestDays?: number;
+    lookbackDays?: number;
+    evaluationWindow?: number;
+    transactionCost?: number;
+    historyDays?: number;
+  }
+): Promise<GenerationResult> {
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  try {
+    // Create loading state
+    loadingStateManager.createRequest(requestId);
+
+    // Default stock data if not provided (for testing)
+    const defaultStockData: StockData[] = stockData || [
+      { symbol: 'SPY', price: 400 },
+      { symbol: 'QQQ', price: 350 },
+      { symbol: 'VTI', price: 200 },
+    ];
+
+    const request: GenerateRequest = {
+      userDescription: description,
+      stockData: defaultStockData,
+      mode,
+      securityConfig,
+      forecastDays,
+      dashboardParams,
+    };
+
+    // Validate request
+    validateRequest(request, requestId);
+    loadingStateManager.updateProgress(requestId, 'validating');
+
+    // Check rate limit
+    const rateLimitCheck = requestTracker.checkRateLimit();
+    if (!rateLimitCheck.allowed) {
+      throw new RateLimitError(
+        'Client-side rate limit exceeded. Please wait before making another request.',
+        rateLimitCheck.remaining,
+        rateLimitCheck.resetTime,
+        requestId
+      );
+    }
+
+    // Check for duplicate request
+    const existingRequest = requestTracker.checkDuplicateRequest(request);
+    if (existingRequest) {
+      throw ErrorFactory.createValidationError(
+        'Identical request is already in progress',
+        'request',
+        'duplicate',
+        requestId
+      );
+    }
+
+    loadingStateManager.updateProgress(requestId, 'generating');
+
+    // Execute API call with retry logic
+    const apiCallPromise = executeWithRetry(() => makeApiCall(request), CLIENT_CONFIG.MAX_RETRIES, requestId);
+    requestTracker.registerRequest(request, apiCallPromise);
+
+    const response = await apiCallPromise;
+
+    loadingStateManager.updateProgress(requestId, 'processing');
+
+    // Handle API response
+    if (!response.success) {
+      throw new ClaudeApiError(
+        response.error || 'API request failed',
+        undefined,
+        response,
+        requestId
+      );
+    }
+
+    if (!response.result) {
+      throw new ParseError(
+        'API response missing result data',
+        JSON.stringify(response),
+        requestId
+      );
+    }
+
+    return response.result;
+
+  } catch (error: any) {
+    if (error instanceof ClaudeError) {
+      throw error;
+    }
+    
+    // Handle unexpected errors
+    throw ErrorFactory.createFromFetchError(error, requestId);
+  } finally {
+    loadingStateManager.completeRequest(requestId);
+  }
+}
+
+// Loading state helpers for React components
+export const loadingHelpers = {
+  // Create a loading state tracker for a component
+  useLoadingState: (requestId: string, callback: (state: LoadingState) => void) => {
+    return loadingStateManager.onStateChange(requestId, callback);
+  },
+
+  // Get current loading state
+  getLoadingState: (requestId: string) => {
+    return loadingStateManager.getState(requestId);
+  },
+
+  // Check if any requests are currently loading
+  hasActiveRequests: () => {
+    // This would need to be implemented if needed
+    return false;
+  }
+};
+
+// Export types and main function
+export type { LoadingState, StockData, GenerationResult, SecurityConfig };
+export { ClientErrorType };
+export { ClaudeClientError };

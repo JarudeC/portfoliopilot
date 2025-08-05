@@ -3,16 +3,16 @@ import React from "react";
 
 export default function Footer() {
   return (
-    <footer className="bg-[#14273F] py-10 text-center text-gray-400">
+    <footer className="bg-[#14273F] border-t border-[#4CC9F0]/20 py-10 text-center text-gray-400">
       <div className="max-w-7xl mx-auto px-6">
         <p className="mb-4">
             PortfolioPilot by Jared Chan
         </p>
         <div className="flex justify-center gap-6 text-sm">
-          <a href="https://github.com/your-repo" className="hover:text-white">
+          <a href="https://github.com/JarudeC/portfoliopilot" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
             GitHub
           </a>
-          <a href="#hero" className="hover:text-white">
+          <a href="#hero" className="hover:text-white transition-colors">
             Back to Top
           </a>
         </div>
