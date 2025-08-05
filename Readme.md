@@ -29,13 +29,18 @@ Portfolio Pilot allows users to build and optimize investment portfolios using a
 ### Key Features
 
 - **Pre-built Algorithms**: Choose from proven portfolio optimization and forecasting models
-- **Custom AI Strategies**: Leverage Anthropic Claude to generate bespoke investment algorithms based on natural language descriptions
 - **Real-time Backtesting**: Test strategies against historical data with comprehensive performance metrics
 - **Interactive Visualizations**: View portfolio compositions, equity curves, and forecast charts
 - **Session History**: Track and compare all your strategy experiments
+  
+**Home Page** - Landing page with hero section, feature showcase, algorithm overview, and call-to-action elements.
+https://github.com/user-attachments/assets/5eac4a4f-958e-4058-968f-8dc9693b50d5
 
 **Dashboard** - Interactive interface for stock selection and model training initiation.
 ![dashboard](https://github.com/user-attachments/assets/02a4133f-aaca-487b-b41b-cccaa347b556)
+
+**Custom AI Strategies**: Leverage Anthropic Claude to generate bespoke investment algorithms based on natural language descriptions
+![custom ai model](https://github.com/user-attachments/assets/1e0b5522-33b8-45ca-a543-1a14d966659c)
 
 **History** - View past training results and portfolio performance analytics.
 ![history](https://github.com/user-attachments/assets/48a8fe79-23b5-40fe-961f-a682a6a00d1f)
@@ -90,10 +95,10 @@ npm run dev
 ## How to Use
 
 ### Standard Algorithm Usage
-https://github.com/user-attachments/assets/3539e57b-f59a-4d6d-98c4-d1f29f1865ed
+https://github.com/user-attachments/assets/a731a76a-0967-4a3c-9bcb-78a20ff75c7e
 
 ### Custom AI Strategy Generation
-[video]
+https://github.com/user-attachments/assets/9fae1330-6469-4382-babf-b3414b1b8754
 
 **Getting Started:**
 1. **Sign In/Login** - Authenticate using OAuth through Supabase
@@ -124,11 +129,5 @@ https://github.com/user-attachments/assets/3539e57b-f59a-4d6d-98c4-d1f29f1865ed
 - **Code Generation** - Anthropic Claude converts descriptions into executable TypeScript algorithms
 - **Dynamic Execution** - Real-time strategy compilation and backtesting
 - **Security Validation** - Multi-layer security checks ensure safe code execution
-- **Examples Include**:
-  - Minimum variance optimization with covariance matrix calculations
-  - Maximum Sharpe ratio strategies with risk-adjusted returns
-  - Momentum and mean reversion hybrid approaches
-  - Volatility-adjusted portfolio construction
-  - Factor-based allocation using valuation metrics
 
 All models use consistent evaluation parameters including transaction costs, rebalancing frequency, and lookback windows for fair comparison.
