@@ -241,9 +241,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   
   try {
     // 1. Validate API Key
-    const apiKey = process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      console.error('NEXT_PUBLIC_ANTHROPIC_API_KEY not configured');
+      console.error('ANTHROPIC_API_KEY not configured');
       const error = new ClaudeApiError('Service temporarily unavailable - API key not configured', 503, null, requestId);
       return createErrorResponse(error);
     }

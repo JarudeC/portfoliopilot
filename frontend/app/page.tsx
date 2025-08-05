@@ -5,6 +5,22 @@ import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContexts";
+import { 
+  ChartBar, 
+  Bot, 
+  Rocket, 
+  Target, 
+  Zap, 
+  Lock, 
+  TrendingUp, 
+  Database, 
+  Settings,
+  Brain,
+  BarChart3,
+  Gauge,
+  Palette,
+  RotateCcw
+} from "lucide-react";
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -66,17 +82,17 @@ export default function Home() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
           {[
             {
-              icon: "📊",
+              icon: <ChartBar className="w-12 h-12 text-[#4CC9F0]" />,
               title: "1 · Select Stocks",
               text: "Choose up to 8 stocks from the DOW30 to build your portfolio.",
             },
             {
-              icon: "🤖",
+              icon: <Bot className="w-12 h-12 text-[#4CC9F0]" />,
               title: "2 · Choose Strategy",
               text: "Select pre-built algorithms or create custom AI-generated strategies using natural language.",
             },
             {
-              icon: "🚀",
+              icon: <Rocket className="w-12 h-12 text-[#4CC9F0]" />,
               title: "3 · Analyze Results",
               text: "View forecasts, backtests, portfolio weights, and comprehensive performance metrics.",
             },
@@ -85,7 +101,7 @@ export default function Home() {
               key={card.title}
               className="bg-[#14273F] rounded-xl p-8 text-center shadow-lg flex flex-col items-center"
             >
-              <div className="text-5xl mb-4">{card.icon}</div>
+              <div className="mb-4">{card.icon}</div>
               <div className="font-semibold text-lg mb-2">{card.title}</div>
               <p className="text-gray-300">{card.text}</p>
             </div>
@@ -101,32 +117,32 @@ export default function Home() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {[
             {
-              icon: "🎯",
+              icon: <Target className="w-8 h-8 text-[#4CC9F0]" />,
               title: "Stock Selection",
               text: "Choose from DOW30 stocks with real-time data and market information.",
             },
             {
-              icon: "🧠",
+              icon: <Brain className="w-8 h-8 text-[#4CC9F0]" />,
               title: "AI Strategy Generation",
               text: "Describe your investment approach in natural language and let Claude generate custom algorithms.",
             },
             {
-              icon: "📈",
+              icon: <TrendingUp className="w-8 h-8 text-[#4CC9F0]" />,
               title: "Pre-built Algorithms",
               text: "Access proven models: ARIMA, LSTM, Autoformer, Markowitz optimization, and reinforcement learning.",
             },
             {
-              icon: "⚡",
+              icon: <Zap className="w-8 h-8 text-[#4CC9F0]" />,
               title: "Real-time Backtesting",
               text: "Test strategies against historical data with comprehensive performance metrics and risk analysis.",
             },
             {
-              icon: "📊",
+              icon: <BarChart3 className="w-8 h-8 text-[#4CC9F0]" />,
               title: "Interactive Visualizations",
               text: "View portfolio compositions, equity curves, forecast charts, and performance analytics.",
             },
             {
-              icon: "💾",
+              icon: <Database className="w-8 h-8 text-[#4CC9F0]" />,
               title: "Session History",
               text: "Track, compare, and analyze all your strategy experiments with persistent database storage.",
             },
@@ -135,7 +151,7 @@ export default function Home() {
               key={f.title}
               className="bg-[#14273F] rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-300 border border-[#4CC9F0]/10 hover:border-[#4CC9F0]/30"
             >
-              <div className="text-3xl mb-4">{f.icon}</div>
+              <div className="mb-4">{f.icon}</div>
               <h3 className="font-semibold text-lg mb-3 text-[#4CC9F0]">
                 {f.title}
               </h3>
@@ -159,7 +175,7 @@ export default function Home() {
             {/* Pre-built Algorithms */}
             <div className="bg-[#0D1B2A] rounded-xl p-8 border border-[#4CC9F0]/20">
               <h3 className="text-2xl font-bold mb-6 text-[#4CC9F0] flex items-center gap-3">
-                <span className="text-3xl">⚙️</span>
+                <Settings className="w-8 h-8" />
                 Pre-built Algorithms
               </h3>
               <div className="space-y-4">
@@ -182,7 +198,7 @@ export default function Home() {
             {/* AI-Generated Strategies */}
             <div className="bg-gradient-to-br from-[#4CC9F0]/10 to-[#7209B7]/10 rounded-xl p-8 border border-[#4CC9F0]/30">
               <h3 className="text-2xl font-bold mb-6 text-[#4CC9F0] flex items-center gap-3">
-                <span className="text-3xl">🤖</span>
+                <Bot className="w-8 h-8" />
                 AI-Generated Strategies
               </h3>
               <div className="space-y-4">
@@ -268,15 +284,15 @@ export default function Home() {
             <h2 className="text-3xl font-bold mb-8 text-[#4CC9F0]">Why Choose Portfolio Pilot?</h2>
             <div className="space-y-4">
               {[
-                { icon: "🎯", title: "Precision", desc: "Advanced algorithms with rigorous backtesting and validation" },
-                { icon: "⚡", title: "Speed", desc: "Real-time strategy generation and portfolio optimization" },
-                { icon: "🔒", title: "Security", desc: "Multi-layer security validation for AI-generated code" },
-                { icon: "📈", title: "Performance", desc: "Comprehensive metrics and risk analysis tools" },
-                { icon: "🎨", title: "Usability", desc: "Intuitive interface with natural language strategy creation" },
-                { icon: "🔄", title: "Reliability", desc: "Robust fallback systems ensure consistent results" }
+                { icon: <Target className="w-6 h-6 text-[#4CC9F0]" />, title: "Precision", desc: "Advanced algorithms with rigorous backtesting and validation" },
+                { icon: <Zap className="w-6 h-6 text-[#4CC9F0]" />, title: "Speed", desc: "Real-time strategy generation and portfolio optimization" },
+                { icon: <Lock className="w-6 h-6 text-[#4CC9F0]" />, title: "Security", desc: "Multi-layer security validation for AI-generated code" },
+                { icon: <Gauge className="w-6 h-6 text-[#4CC9F0]" />, title: "Performance", desc: "Comprehensive metrics and risk analysis tools" },
+                { icon: <Palette className="w-6 h-6 text-[#4CC9F0]" />, title: "Usability", desc: "Intuitive interface with natural language strategy creation" },
+                { icon: <RotateCcw className="w-6 h-6 text-[#4CC9F0]" />, title: "Reliability", desc: "Robust fallback systems ensure consistent results" }
               ].map((benefit, index) => (
                 <div key={index} className="flex items-start gap-4 p-4 bg-[#14273F]/50 rounded-lg border border-[#4CC9F0]/10 hover:border-[#4CC9F0]/30 transition-colors">
-                  <span className="text-2xl">{benefit.icon}</span>
+                  <div className="mt-1">{benefit.icon}</div>
                   <div>
                     <h4 className="font-semibold text-white mb-1">{benefit.title}</h4>
                     <p className="text-sm text-gray-300">{benefit.desc}</p>

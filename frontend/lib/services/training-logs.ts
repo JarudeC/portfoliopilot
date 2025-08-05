@@ -52,37 +52,6 @@ export class TrainingLogService {
       status: 'completed'
     };
     
-    
-    // Ensure auth user exists for development
-    try {
-      
-      // Create dev user if needed
-      const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
-        id: finalUserId,
-        email: `dev-${finalUserId.slice(0, 8)}@example.com`,
-        password: 'devpassword123',
-        user_metadata: {
-          name: 'Development User'
-        },
-        email_confirm: true
-      });
-      
-      if (authError) {
-        if (authError.message.includes('already registered') || authError.message.includes('User already registered')) {
-        } else {
-          console.warn('Could not create auth user:', authError.message);
-          // Try to find existing user or continue anyway
-        }
-      } else {
-      }
-    } catch (authCreationError) {
-      console.warn('Auth user creation failed:', authCreationError);
-      // Continue with logging attempt anyway
-    }
-    
-    // Set final user ID
-    insertData.user_id = finalUserId;
-    
     const { data: result, error } = await supabase
       .from('training_logs')
       .insert(insertData)
