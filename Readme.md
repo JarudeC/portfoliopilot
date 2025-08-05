@@ -130,7 +130,7 @@ https://github.com/user-attachments/assets/9fae1330-6469-4382-babf-b3414b1b8754
 - **LSTM** - Long short-term memory neural networks for sequence modeling
 - **Autoformer** - Transformer-based model for long-term time series forecasting
 
-### 🤖 Custom AI-Generated Strategies
+### Custom AI-Generated Strategies
 - **Natural Language Processing** - Describe your investment strategy in plain English
 - **Code Generation** - Anthropic Claude converts descriptions into executable TypeScript algorithms
 - **Dynamic Execution** - Real-time strategy compilation and backtesting
