@@ -34,7 +34,7 @@ Portfolio Pilot allows users to build and optimize investment portfolios using a
 - **Session History**: Track and compare all your strategy experiments
   
 **Home Page** - Landing page with hero section, feature showcase, algorithm overview, and call-to-action elements.
-https://github.com/user-attachments/assets/5eac4a4f-958e-4058-968f-8dc9693b50d5
+https://github.com/user-attachments/assets/3ad5b6ae-4790-4918-be4a-b6d085259e93
 
 **Dashboard** - Interactive interface for stock selection and model training initiation.
 ![dashboard](https://github.com/user-attachments/assets/02a4133f-aaca-487b-b41b-cccaa347b556)
