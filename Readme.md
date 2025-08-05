@@ -34,16 +34,16 @@ Portfolio Pilot allows users to build and optimize investment portfolios using a
 - **Session History**: Track and compare all your strategy experiments
   
 **Home Page** - Landing page with hero section, feature showcase, algorithm overview, and call-to-action elements.
-https://github.com/user-attachments/assets/3ad5b6ae-4790-4918-be4a-b6d085259e93
+![Home Page](https://github.com/user-attachments/assets/3ad5b6ae-4790-4918-be4a-b6d085259e93)
 
 **Dashboard** - Interactive interface for stock selection and model training initiation.
-![dashboard](https://github.com/user-attachments/assets/02a4133f-aaca-487b-b41b-cccaa347b556)
+![Dashboard](https://github.com/user-attachments/assets/02a4133f-aaca-487b-b41b-cccaa347b556)
 
 **Custom AI Strategies**: Leverage Anthropic Claude to generate bespoke investment algorithms based on natural language descriptions
-![custom ai model](https://github.com/user-attachments/assets/1e0b5522-33b8-45ca-a543-1a14d966659c)
+![Custom AI Model](https://github.com/user-attachments/assets/1e0b5522-33b8-45ca-a543-1a14d966659c)
 
 **History** - View past training results and portfolio performance analytics.
-![history](https://github.com/user-attachments/assets/48a8fe79-23b5-40fe-961f-a682a6a00d1f)
+![History](https://github.com/user-attachments/assets/48a8fe79-23b5-40fe-961f-a682a6a00d1f)
 
 ## Project Structure
 
@@ -95,10 +95,10 @@ npm run dev
 ## How to Use
 
 ### Standard Algorithm Usage
-https://github.com/user-attachments/assets/a731a76a-0967-4a3c-9bcb-78a20ff75c7e
+![Standard](https://github.com/user-attachments/assets/a731a76a-0967-4a3c-9bcb-78a20ff75c7e)
 
 ### Custom AI Strategy Generation
-https://github.com/user-attachments/assets/9fae1330-6469-4382-babf-b3414b1b8754
+![Custom AI](https://github.com/user-attachments/assets/9fae1330-6469-4382-babf-b3414b1b8754)
 
 **Getting Started:**
 1. **Sign In/Login** - Authenticate using OAuth through Supabase
