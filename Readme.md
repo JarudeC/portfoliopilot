@@ -35,7 +35,7 @@ Portfolio Pilot allows users to build and optimize investment portfolios using a
   
 **Home Page** - Landing page with hero section, feature showcase, algorithm overview, and call-to-action elements.
 
-https://github.com/user-attachments/assets/141c85ff-f158-4d61-a572-a6c1d5d3136f
+https://github.com/user-attachments/assets/5321954a-5d97-45d7-9c7b-e68909ab53b1
 
 **Dashboard** - Interactive interface for stock selection and model training initiation.
 
