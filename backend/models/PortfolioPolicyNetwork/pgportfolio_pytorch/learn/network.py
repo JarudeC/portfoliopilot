@@ -78,13 +78,17 @@ class CNN(nn.Module):
         self.decision_i = nn.Conv2d(in_ch, 1, 1)
         self.decision_s = nn.Conv2d(in_ch, 1, 1)
         
-        # Better initialization to break symmetry and encourage diversity
-        for m in (self.decision_i, self.decision_s):
-            nn.init.xavier_uniform_(m.weight)
-            nn.init.uniform_(m.bias, -0.1, 0.1)  # Small random bias to break symmetry
+        # Aggressive initialization to break symmetry and force diverse outputs
+        # decision_i: high variance initialization
+        nn.init.normal_(self.decision_i.weight, mean=0.0, std=0.5)
+        nn.init.uniform_(self.decision_i.bias, -1.0, 1.0)
+        
+        # decision_s: different initialization pattern
+        nn.init.normal_(self.decision_s.weight, mean=0.0, std=0.3)
+        nn.init.uniform_(self.decision_s.bias, -0.5, 1.5)  # Asymmetric bias
 
-        # learnable cash bias
-        self.btc_bias = nn.Parameter(torch.zeros(1, 1, 1, 1))
+        # learnable cash bias - initialize with small random value to break symmetry
+        self.btc_bias = nn.Parameter(torch.randn(1, 1, 1, 1) * 0.01)
 
     def forward(self, x: torch.Tensor, prev_w: torch.Tensor) -> torch.Tensor:
         B    = x.size(0)
@@ -134,17 +138,25 @@ class CNN(nn.Module):
         ws = ws_raw.view(B, -1)    
         print(f"DEBUG network: wi.shape after squeeze = {wi.shape}, ws.shape = {ws.shape}")
         
-        # Apply temperature scaling to sharpen distributions
-        temperature = 2.0
-        wi = torch.softmax(wi / temperature, 1)
-        ws = torch.softmax(ws / temperature, 1)
-        print(f"DEBUG network: wi after softmax = {wi}")
-        print(f"DEBUG network: ws after softmax = {ws}")
+        # Original PPN approach: use raw outputs directly with proper normalization
+        # Don't apply softmax yet - let the raw network outputs differentiate first
+        print(f"DEBUG network: wi raw = {wi}")
+        print(f"DEBUG network: ws raw = {ws}")
         
-        # Different combination to encourage diversity
-        result = wi * (2.0 - ws)  # This maintains positivity and sum=1
-        # Renormalize to ensure sum=1
-        result = result / result.sum(dim=1, keepdim=True)
+        # Original PPN combination: wi are base allocations, ws are scaling factors
+        # This allows for much more diverse weight distributions
+        combined = wi + ws  # Simple addition as in original paper
+        
+        # Add exploration noise during training to prevent equal-weight convergence
+        if self.training:
+            noise = torch.randn_like(combined) * 0.1  # Add noise only during training
+            combined = combined + noise
+        
+        # Apply softmax only once at the end for final normalization
+        result = torch.softmax(combined, dim=1)
+        
+        print(f"DEBUG network: combined raw = {combined}")
+        print(f"DEBUG network: result after softmax = {result}")
         
         print(f"DEBUG network: result = {result}")
         print(f"DEBUG network: result sum = {result.sum(dim=1)}")

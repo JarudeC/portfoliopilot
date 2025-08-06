@@ -155,6 +155,9 @@ class NNAgent:
                 param_count += 1
         total_grad_norm = total_grad_norm ** 0.5
         
+        # Clip gradients to prevent vanishing/exploding gradients that cause uniform convergence
+        torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=1.0)
+        
         self.opt.step()
         
         # Check if weights actually changed
