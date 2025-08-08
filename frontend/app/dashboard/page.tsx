@@ -11,60 +11,13 @@ import { useToast } from "../../components/ui/Toast";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { ClaudePopup } from "../../components/claude";
 import { ClaudeClientError, type GenerationResult } from "../../lib/claude/client";
-import { calculateForecastMetrics, type ForecastData } from "../../lib/utils/forecastMetrics";
+import { calculateForecastMetrics, calculateOverallForecastMetrics, type ForecastData, type OverallForecastMetrics } from "../../lib/utils/forecastMetrics";
 
-// Component for individual forecast stock item with async metrics
-const ForecastStockItem = ({ ticker, data, claudeStrategy }: { 
+// Component for individual forecast stock item (simplified - no per-stock metrics)
+const ForecastStockItem = ({ ticker, data }: { 
   ticker: string, 
-  data: ForecastData,
-  claudeStrategy?: any
+  data: ForecastData
 }) => {
-  const [metrics, setMetrics] = useState<{ mse: number; mae: number } | null>(null);
-  const [metricsLoading, setMetricsLoading] = useState(true);
-
-  useEffect(() => {
-    // Use pre-calculated metrics if available, otherwise calculate them
-    if (data.forecastSeries.length === 0 || data.historySeries.length === 0) {
-      setMetrics(null);
-      setMetricsLoading(false);
-      return;
-    }
-    
-    // Check if metrics are already calculated and stored
-    if (data.metrics) {
-      setMetrics(data.metrics);
-      setMetricsLoading(false);
-      return;
-    }
-    
-    // Fallback: calculate metrics if not pre-calculated (shouldn't happen in normal flow)
-    if (!data.algorithm) {
-      setMetrics(null);
-      setMetricsLoading(false);
-      return;
-    }
-    
-    const loadMetrics = async () => {
-      try {
-        setMetricsLoading(true);
-        const result = await calculateForecastMetrics(
-          data, 
-          data.algorithm, 
-          ticker, 
-          data.algorithm?.toLowerCase() === 'custom ai strategy' ? claudeStrategy : undefined
-        );
-        setMetrics(result);
-      } catch (error) {
-        console.error(`Failed to calculate metrics for ${ticker}:`, error);
-        setMetrics({ mse: 0, mae: 0 });
-      } finally {
-        setMetricsLoading(false);
-      }
-    };
-
-    loadMetrics();
-  }, [ticker, data.forecastSeries.length, data.historySeries.length, data.algorithm, data.metrics]);
-
   const { historySeries, forecastSeries } = data;
 
   return (
@@ -76,29 +29,6 @@ const ForecastStockItem = ({ ticker, data, claudeStrategy }: {
         height={140}
         showTitle={false}
       />
-      {/* Display MSE and MAE for this stock */}
-      <div className="mt-2">
-        {metricsLoading ? (
-          <div className="bg-[#0d1b2a]/50 rounded-lg p-4 text-center">
-            <span className="text-xs text-gray-400">Calculating metrics for {data.algorithm}...</span>
-          </div>
-        ) : metrics ? (
-          <div>
-            <MetricsTable 
-              metrics={metrics}
-              title={`${ticker} Forecast Accuracy`}
-              showTitle={false}
-            />
-            <div className="text-xs text-gray-500 mt-1">
-              Algorithm: {data.algorithm || 'Unknown'} | Data points: {data.historySeries.length}
-            </div>
-          </div>
-        ) : (
-          <div className="bg-[#0d1b2a]/50 rounded-lg p-4 text-center">
-            <span className="text-xs text-red-400">Metrics calculation failed</span>
-          </div>
-        )}
-      </div>
     </div>
   );
 };
@@ -207,6 +137,10 @@ export default function Dashboard() {
     Record<string, ForecastData>
   >({});
   const [forecastingTickers, setForecastingTickers] = useState<string[]>([]);
+  
+  // Overall metrics for research purposes
+  const [overallMetrics, setOverallMetrics] = useState<OverallForecastMetrics | null>(null);
+  const [overallMetricsLoading, setOverallMetricsLoading] = useState(false);
   
   // Claude strategy state management
   const [claudeForecastStrategy, setClaudeForecastStrategy] = useState<GenerationResult | null>(null);
@@ -541,6 +475,7 @@ export default function Dashboard() {
     setFLoading(true);
     setFProg(0);
     setForecastDataMap({});
+    setOverallMetrics(null);
     setForecastingTickers([...tickers]);
 
     const today = new Date();
@@ -756,14 +691,39 @@ export default function Dashboard() {
     
     // Update state with the enhanced forecast data (including metrics)
     setForecastDataMap(tempDataMap);
-    
-    // Create metrics map for logging
-    const metricsMap = Object.fromEntries(
-      updatedForecasts.map((result) => {
+
+    // Calculate overall metrics for research purposes
+    let metricsForLogging = null;
+    try {
+      setOverallMetricsLoading(true);
+      const stockDataList = updatedForecasts.map((result) => {
         const [ticker, data] = result as [string, ForecastData];
-        return [ticker, data.metrics];
-      })
-    );
+        return {
+          ticker,
+          data,
+          forecastAlgorithm: data.algorithm!,
+          claudeStrategy: isClaudeForecastSelected ? claudeForecastStrategy : undefined
+        };
+      });
+      
+      const overallMetricsResult = await calculateOverallForecastMetrics(stockDataList);
+      setOverallMetrics(overallMetricsResult);
+      
+      // Use the fresh calculation result for logging (not the state variable)
+      metricsForLogging = overallMetricsResult ? {
+        mse: overallMetricsResult.mse,
+        mae: overallMetricsResult.mae,
+        total_predictions: overallMetricsResult.totalPredictions,
+        stock_count: overallMetricsResult.stockCount
+      } : null;
+      
+    } catch (error) {
+      console.error('Failed to calculate overall metrics:', error);
+      setOverallMetrics(null);
+      metricsForLogging = null;
+    } finally {
+      setOverallMetricsLoading(false);
+    }
     
     const logPayload = {
       type: 'forecast',
@@ -792,7 +752,7 @@ export default function Dashboard() {
           forecast: data.forecastSeries
         }
       ])),
-      metrics: metricsMap
+      metrics: metricsForLogging
     };
     
     // Send forecast data to logging endpoint
@@ -961,10 +921,33 @@ export default function Dashboard() {
                       key={ticker}
                       ticker={ticker}
                       data={data}
-                      claudeStrategy={isClaudeForecastSelected ? claudeForecastStrategy : undefined}
                     />
                   );
                 })}
+
+                {/* Overall Model Performance Metrics - right after individual charts */}
+                {overallMetricsLoading ? (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-semibold text-cyan-300 mb-3">Performance Metrics</h4>
+                    <div className="text-center py-4">
+                      <span className="text-xs text-gray-400">Calculating overall metrics...</span>
+                    </div>
+                  </div>
+                ) : overallMetrics ? (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-semibold text-cyan-300 mb-3">Performance Metrics</h4>
+                    <MetricsTable 
+                      metrics={{
+                        mse: overallMetrics.mse,
+                        mae: overallMetrics.mae
+                      }} 
+                      showTitle={false}
+                    />
+                    <div className="text-xs text-gray-500 mt-2">
+                      Total predictions: {overallMetrics.totalPredictions} | Stocks analyzed: {overallMetrics.stockCount}
+                    </div>
+                  </div>
+                ) : null}
 
               </div>
             ) : (
@@ -977,6 +960,7 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
         </section>
         {/* Right sidebar: backtesting controls and results */}
         <aside className="bg-[#14273F] rounded-xl p-6 flex flex-col">

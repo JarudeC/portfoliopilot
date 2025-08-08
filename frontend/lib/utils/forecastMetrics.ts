@@ -12,6 +12,169 @@ export interface ForecastMetrics {
   mae: number;
 }
 
+export interface OverallForecastMetrics {
+  mse: number;
+  mae: number;
+  totalPredictions: number;
+  stockCount: number;
+}
+
+/**
+ * Calculate overall MSE/MAE across multiple stocks for model performance assessment
+ * Used for research purposes to get single metrics representing model accuracy
+ */
+export async function calculateOverallForecastMetrics(
+  stockDataList: Array<{
+    ticker: string;
+    data: ForecastData;
+    forecastAlgorithm: string;
+    claudeStrategy?: any;
+  }>
+): Promise<OverallForecastMetrics> {
+  const allPredictions: number[] = [];
+  const allActuals: number[] = [];
+  let successfulStocks = 0;
+
+  for (const { ticker, data, forecastAlgorithm, claudeStrategy } of stockDataList) {
+    try {
+      const isCustomAI = forecastAlgorithm.toLowerCase() === 'custom ai strategy';
+      
+      // For Custom AI, use already-generated predictions to avoid rate limiting
+      if (isCustomAI) {
+        // Use the forecast data that was already generated (no API calls needed)
+        const { historySeries, forecastSeries } = data;
+        
+        if (historySeries.length < 20 || forecastSeries.length === 0) {
+          continue;
+        }
+
+        // Use same 70/30 split as other algorithms
+        const splitIndex = Math.floor(historySeries.length * 0.7);
+        const trainData = historySeries.slice(0, splitIndex);
+        const testData = historySeries.slice(splitIndex);
+        
+        if (testData.length < 5) {
+          continue;
+        }
+
+        // Use the already-generated forecast predictions
+        // The forecastSeries already contains absolute prices (lastHistoricalPrice * multiplier)
+        let predictionsFromForecast = forecastSeries.slice(0, testData.length).map(f => f.price);
+        
+        // Ensure arrays match length
+        let actualPrices = testData.map(d => d.price);
+        if (predictionsFromForecast.length !== actualPrices.length) {
+          const minLength = Math.min(predictionsFromForecast.length, actualPrices.length);
+          predictionsFromForecast = predictionsFromForecast.slice(0, minLength);
+          actualPrices = actualPrices.slice(0, minLength);
+        }
+
+        // Add to overall arrays
+        allPredictions.push(...predictionsFromForecast);
+        allActuals.push(...actualPrices);
+        successfulStocks++;
+        continue;
+      }
+      
+      // Add delay to prevent API rate limiting
+      if (successfulStocks > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      const { historySeries } = data;
+      
+      if (historySeries.length < 20) {
+        continue; // Skip stocks with insufficient data
+      }
+      
+      // Use same backtest approach as individual calculation
+      const splitIndex = Math.floor(historySeries.length * 0.7);
+      const trainData = historySeries.slice(0, splitIndex);
+      const testData = historySeries.slice(splitIndex);
+      
+      if (testData.length < 5) {
+        continue; // Skip if test data too small
+      }
+
+      let predictions: number[];
+      
+      if (isCustomAI) {
+        predictions = await executeCustomAIForBacktest(trainData, testData.length, ticker, claudeStrategy);
+      } else {
+        predictions = await generateBacktestPredictionsFromBackend(
+          trainData, 
+          testData.length, 
+          forecastAlgorithm,
+          ticker,
+          testData
+        );
+      }
+      
+      // Get actual prices (same logic as individual function)
+      let actualPrices: number[];
+      
+      if (isCustomAI) {
+        actualPrices = testData.map(d => d.price);
+      } else {
+        const embeddedTestPrices = (predictions as any)._backendTestPrices;
+        const embeddedTicker = (predictions as any)._ticker;
+        
+        if (embeddedTestPrices && embeddedTicker === ticker) {
+          actualPrices = embeddedTestPrices;
+        } else {
+          actualPrices = testData.map(d => d.price);
+        }
+      }
+      
+      // Convert Custom AI multipliers to absolute prices
+      const basePrice = trainData[trainData.length - 1].price;
+      let adjustedPredictions: number[];
+      
+      if (isCustomAI) {
+        adjustedPredictions = predictions.map(multiplier => basePrice * multiplier);
+      } else {
+        adjustedPredictions = predictions;
+      }
+      
+      // Ensure array lengths match
+      if (adjustedPredictions.length !== actualPrices.length) {
+        const minLength = Math.min(adjustedPredictions.length, actualPrices.length);
+        adjustedPredictions = adjustedPredictions.slice(0, minLength);
+        actualPrices = actualPrices.slice(0, minLength);
+      }
+      
+      // Add to overall arrays
+      allPredictions.push(...adjustedPredictions);
+      allActuals.push(...actualPrices);
+      successfulStocks++;
+      
+    } catch (error) {
+      // Skip failed stocks but continue with others
+      console.warn(`Failed to calculate metrics for ${ticker}:`, error);
+      continue;
+    }
+  }
+
+  // Calculate overall MSE and MAE across all stocks
+  if (allPredictions.length === 0 || allActuals.length === 0) {
+    return { 
+      mse: 0, 
+      mae: 0, 
+      totalPredictions: 0, 
+      stockCount: 0 
+    };
+  }
+
+  const overallMSE = calculateMSE(allPredictions, allActuals);
+  const overallMAE = calculateMAE(allPredictions, allActuals);
+
+  return {
+    mse: overallMSE,
+    mae: overallMAE,
+    totalPredictions: allPredictions.length,
+    stockCount: successfulStocks
+  };
+}
+
 /**
  * Calculate TRUE MSE/MAE for forecast by backtesting using the real backend algorithms
  * This splits historical data, calls the actual backend, then compares to actual known prices

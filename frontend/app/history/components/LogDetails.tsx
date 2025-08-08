@@ -71,11 +71,10 @@ export default function LogDetails({ log }: LogDetailsProps) {
     )
   }
 
-  const renderForecastChartsWithMetrics = () => {
+  const renderForecastCharts = () => {
     if (log.type !== 'forecast') return null
 
     const chartData = (log as any).charts
-    const metrics = log.metrics as any
     
     if (!chartData) return null
 
@@ -90,16 +89,9 @@ export default function LogDetails({ log }: LogDetailsProps) {
               
               if (!history || !forecast) return null
               
-              // Get metrics for this ticker, ensure MSE comes before MAE
-              const tickerMetrics = metrics?.[ticker] || {}
-              const orderedMetrics = {
-                ...(tickerMetrics.mse !== undefined && { mse: tickerMetrics.mse }),
-                ...(tickerMetrics.mae !== undefined && { mae: tickerMetrics.mae })
-              }
-              
               return (
-                <div key={ticker} className="space-y-4">
-                  {/* Chart */}
+                <div key={ticker}>
+                  {/* Chart only - no per-stock metrics */}
                   <div className="bg-[#0d1b2a]/50 rounded-lg p-4">
                     <h5 className="text-sm font-semibold text-cyan-300 mb-3">{ticker}</h5>
                     <ForecastChart
@@ -109,24 +101,39 @@ export default function LogDetails({ log }: LogDetailsProps) {
                       showTitle={false}
                     />
                   </div>
-                  
-                  {/* Metrics immediately below chart - matching dashboard pattern */}
-                  {Object.keys(orderedMetrics).length > 0 && (
-                    <div className="bg-[#0d1b2a]/50 rounded-lg p-4">
-                      <MetricsTable 
-                        metrics={orderedMetrics} 
-                        showTitle={false}
-                        title={`${ticker} Forecast Accuracy`}
-                      />
-                      <div className="text-xs text-gray-500 mt-1">
-                        Algorithm: {log.model} | Data points: {history.length}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )
             })}
         </div>
+      </div>
+    )
+  }
+
+  const renderForecastMetrics = () => {
+    if (log.type !== 'forecast') return null
+    
+    const overallMetrics = log.metrics as any
+    
+    // Check if we have overall metrics  
+    if (!overallMetrics || (overallMetrics.mse === undefined && overallMetrics.mae === undefined)) {
+      return null
+    }
+
+    return (
+      <div>
+        <h4 className="text-sm font-semibold mb-3 text-cyan-300">Performance Metrics</h4>
+        <MetricsTable 
+          metrics={{
+            ...(overallMetrics.mse !== undefined && { mse: overallMetrics.mse }),
+            ...(overallMetrics.mae !== undefined && { mae: overallMetrics.mae })
+          }} 
+          showTitle={false}
+        />
+        {(overallMetrics.total_predictions || overallMetrics.stock_count) && (
+          <div className="text-xs text-gray-500 mt-2">
+            Algorithm: {log.model} | Total predictions: {overallMetrics.total_predictions || 'N/A'} | Stocks analyzed: {overallMetrics.stock_count || 'N/A'}
+          </div>
+        )}
       </div>
     )
   }
@@ -162,8 +169,11 @@ export default function LogDetails({ log }: LogDetailsProps) {
       
       {log.type === 'forecast' && (
         <div className="space-y-6">
-          {/* Forecast Charts with Metrics - matching dashboard pattern */}
-          {renderForecastChartsWithMetrics()}
+          {/* Forecast Charts */}
+          {renderForecastCharts()}
+          
+          {/* Performance Metrics */}
+          {renderForecastMetrics()}
         </div>
       )}
 
