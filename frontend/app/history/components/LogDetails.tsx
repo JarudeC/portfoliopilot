@@ -71,15 +71,17 @@ export default function LogDetails({ log }: LogDetailsProps) {
     )
   }
 
-  const renderIndividualForecastCharts = () => {
+  const renderForecastChartsWithMetrics = () => {
     if (log.type !== 'forecast') return null
 
     const chartData = (log as any).charts
+    const metrics = log.metrics as any
+    
     if (!chartData) return null
 
     return (
       <div>
-        <h4 className="text-sm font-semibold mb-3 text-cyan-300">Forecast Charts</h4>
+        <h4 className="text-sm font-semibold mb-3 text-cyan-300">Forecast Results</h4>
         <div className="grid grid-cols-1 gap-4">
           {Object.entries(chartData)
             .filter(([ticker, data]) => data && typeof data === 'object')
@@ -88,15 +90,39 @@ export default function LogDetails({ log }: LogDetailsProps) {
               
               if (!history || !forecast) return null
               
+              // Get metrics for this ticker, ensure MSE comes before MAE
+              const tickerMetrics = metrics?.[ticker] || {}
+              const orderedMetrics = {
+                ...(tickerMetrics.mse !== undefined && { mse: tickerMetrics.mse }),
+                ...(tickerMetrics.mae !== undefined && { mae: tickerMetrics.mae })
+              }
+              
               return (
-                <div key={ticker} className="bg-[#0d1b2a]/50 rounded-lg p-4">
-                  <h5 className="text-sm font-semibold text-cyan-300 mb-3">{ticker}</h5>
-                  <ForecastChart
-                    historySeries={history}
-                    forecastSeries={forecast}
-                    height={200}
-                    showTitle={false}
-                  />
+                <div key={ticker} className="space-y-4">
+                  {/* Chart */}
+                  <div className="bg-[#0d1b2a]/50 rounded-lg p-4">
+                    <h5 className="text-sm font-semibold text-cyan-300 mb-3">{ticker}</h5>
+                    <ForecastChart
+                      historySeries={history}
+                      forecastSeries={forecast}
+                      height={200}
+                      showTitle={false}
+                    />
+                  </div>
+                  
+                  {/* Metrics immediately below chart - matching dashboard pattern */}
+                  {Object.keys(orderedMetrics).length > 0 && (
+                    <div className="bg-[#0d1b2a]/50 rounded-lg p-4">
+                      <MetricsTable 
+                        metrics={orderedMetrics} 
+                        showTitle={false}
+                        title={`${ticker} Forecast Accuracy`}
+                      />
+                      <div className="text-xs text-gray-500 mt-1">
+                        Algorithm: {log.model} | Data points: {history.length}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -136,7 +162,8 @@ export default function LogDetails({ log }: LogDetailsProps) {
       
       {log.type === 'forecast' && (
         <div className="space-y-6">
-          {renderIndividualForecastCharts()}
+          {/* Forecast Charts with Metrics - matching dashboard pattern */}
+          {renderForecastChartsWithMetrics()}
         </div>
       )}
 

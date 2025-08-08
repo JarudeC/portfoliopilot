@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       parameters: body.parameters,
       results: body.results,
       charts: body.charts,
-      metrics: null // Forecasts don't have performance metrics like backtests
+      metrics: body.metrics || null // Include forecast metrics (MSE/MAE) if provided
     };
     
     await logService.createLog(logData, user.id);

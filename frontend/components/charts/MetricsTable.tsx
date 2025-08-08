@@ -25,6 +25,7 @@ export default function MetricsTable({
   }
 
   const metricLabels: Record<string, string> = {
+    // Backtest metrics
     Return: "Return",
     AnnualReturn: "Annual Ret.",
     DailyVol: "Daily Vol.",
@@ -37,12 +38,19 @@ export default function MetricsTable({
     sharpe_ratio: "Sharpe Ratio",
     max_drawdown: "Max Drawdown",
     win_rate: "Win Rate",
-    profit_factor: "Profit Factor"
+    profit_factor: "Profit Factor",
+    // Forecast metrics
+    mse: "MSE",
+    mae: "MAE"
   }
 
   const formatValue = (key: string, value: number): string => {
     if (key.toLowerCase().includes('rate') || key.toLowerCase().includes('return')) {
       return (value * 100).toFixed(2) + '%'
+    }
+    // Format MSE/MAE with appropriate precision
+    if (key === 'mse' || key === 'mae') {
+      return value.toFixed(2)
     }
     return value.toFixed(3)
   }

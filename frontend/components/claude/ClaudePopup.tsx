@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { generateStrategy, ClaudeClientError, ClientErrorType, type GenerationResult, type StockData } from "../../lib/claude/client";
+import { generateStrategy, generateCodeOnly, executeUserCode, ClaudeClientError, ClientErrorType, type GenerationResult, type StockData } from "../../lib/claude/client";
+import CodeEditor from './CodeEditor';
 
 // Popup component props
 interface ClaudePopupProps {
@@ -103,6 +104,11 @@ Press Ctrl+Enter to generate, Esc to close`;
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<GenerationResult | null>(null);
+  
+  // Code review states
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [showCodeReview, setShowCodeReview] = useState<boolean>(false);
+  const [executingCode, setExecutingCode] = useState<boolean>(false);
 
   // Refs for DOM elements
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -140,9 +146,9 @@ Press Ctrl+Enter to generate, Esc to close`;
     if (error) setError(null);
   }, [validateInput, error]);
 
-  // Generate strategy function
+  // Generate code function - first step: Generate code only for review
   const handleGenerate = useCallback(async () => {
-    if (loading) return;
+    if (loading || !stockData || stockData.length === 0) return;
 
     // Final validation
     const validation = validateInput(userDescription);
@@ -157,18 +163,83 @@ Press Ctrl+Enter to generate, Esc to close`;
       setError(null);
       setValidationError(null);
 
-      // Generate strategy using client service
-      const result = await generateStrategy(
+      // Call the new generateCodeOnly function to get code without execution
+      const result = await generateCodeOnly(
         userDescription.trim(), 
         mode, 
-        stockData, 
+        stockData, // Use actual user-selected stocks
         undefined, // securityConfig 
+        mode === 'forecast' ? dashboardParams.forecastDays : undefined,
+        dashboardParams
+      );
+      
+      if (result.success && result.code) {
+        setGeneratedCode(result.code);
+        setShowCodeReview(true);
+      } else {
+        setError(result.error || "No code was generated. Please try a different description.");
+      }
+      
+    } catch (err: any) {
+      console.error("Code generation error:", err);
+      
+      let errorMessage = "Failed to generate code. Please try again.";
+      
+      if (err instanceof ClaudeClientError) {
+        switch (err.type) {
+          case ClientErrorType.RATE_LIMIT_ERROR:
+            errorMessage = "Too many requests. Please wait a moment before trying again.";
+            break;
+          case ClientErrorType.VALIDATION_ERROR:
+            errorMessage = `Input validation failed: ${err.message}`;
+            break;
+          case ClientErrorType.NETWORK_ERROR:
+          case ClientErrorType.TIMEOUT_ERROR:
+            errorMessage = "Network issue. Please check your connection and try again.";
+            break;
+          case ClientErrorType.API_ERROR:
+            errorMessage = "Service temporarily unavailable. Please try again in a few moments.";
+            break;
+          case ClientErrorType.DUPLICATE_REQUEST:
+            errorMessage = "A similar request is already being processed.";
+            break;
+          default:
+            errorMessage = err.message || errorMessage;
+        }
+      }
+      
+      setError(errorMessage);
+      
+      if (onError) {
+        onError(err);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [userDescription, stockData, loading, validateInput, onError, mode, dashboardParams]);
+
+  // Execute approved code function - second step
+  const handleCodeApproval = useCallback(async (editedCode: string) => {
+    if (executingCode || !stockData || stockData.length === 0) return;
+
+    try {
+      setExecutingCode(true);
+      setError(null);
+
+      
+      const result = await executeUserCode(
+        editedCode,
+        mode, 
+        stockData,
+        undefined,
         mode === 'forecast' ? dashboardParams.forecastDays : undefined,
         dashboardParams
       );
       
       // Update state with results
       setLastResult(result);
+      setShowCodeReview(false);
+      setGeneratedCode(null);
 
       // Notify parent component
       if (onStrategyGenerated) {
@@ -177,11 +248,11 @@ Press Ctrl+Enter to generate, Esc to close`;
 
       // Show success message briefly
       if (result.fallbackUsed) {
-        setError("Generated using fallback strategy. The AI-generated approach couldn't be used, but we've provided equal weights.");
+        setError("Execution failed, using fallback strategy. The edited code couldn't be executed safely.");
       }
 
     } catch (err: any) {
-      console.error("Strategy generation error:", err);
+      console.error("Strategy execution error:", err);
       
       let errorMessage = "An unexpected error occurred. Please try again.";
       
@@ -215,9 +286,15 @@ Press Ctrl+Enter to generate, Esc to close`;
         onError(err);
       }
     } finally {
-      setLoading(false);
+      setExecutingCode(false);
     }
-  }, [userDescription, stockData, loading, validateInput, onStrategyGenerated, onError, mode, dashboardParams]);
+  }, [stockData, executingCode, onStrategyGenerated, onError, mode, dashboardParams]);
+
+  // Handle code rejection
+  const handleCodeRejection = useCallback(() => {
+    setShowCodeReview(false);
+    setGeneratedCode(null);
+  }, []);
 
   // Clear all data
   const handleClear = useCallback(() => {
@@ -225,6 +302,8 @@ Press Ctrl+Enter to generate, Esc to close`;
     setError(null);
     setValidationError(null);
     setLastResult(null);
+    setGeneratedCode(null);
+    setShowCodeReview(false);
     textareaRef.current?.focus();
   }, []);
 
@@ -239,10 +318,10 @@ Press Ctrl+Enter to generate, Esc to close`;
 
   // Handle close popup
   const handleClose = useCallback(() => {
-    if (loading) return;
+    if (loading || executingCode) return;
     handleClear();
     onClose();
-  }, [loading, handleClear, onClose]);
+  }, [loading, executingCode, handleClear, onClose]);
 
   // Handle overlay click
   const handleOverlayClick = useCallback((e: React.MouseEvent) => {
@@ -281,7 +360,25 @@ Press Ctrl+Enter to generate, Esc to close`;
     }
   }, [isOpen]);
 
+
   if (!isOpen) return null;
+
+  // Show code editor if we have generated code
+  if (showCodeReview && generatedCode) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+          <CodeEditor
+            code={generatedCode}
+            onApprove={handleCodeApproval}
+            onReject={handleCodeRejection}
+            mode={mode}
+            loading={executingCode}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div 
@@ -407,10 +504,10 @@ Press Ctrl+Enter to generate, Esc to close`;
                     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" opacity="0.25"/>
                     <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                   </svg>
-                  {mode === 'backtest' ? 'Generating Strategy...' : 'Generating Forecast...'}
+                  Generating Code...
                 </span>
               ) : (
-                mode === 'backtest' ? 'Generate Strategy' : 'Generate Forecast'
+                'Generate Code'
               )}
             </button>
             
@@ -426,7 +523,7 @@ Press Ctrl+Enter to generate, Esc to close`;
             <button
               type="button"
               onClick={handleClose}
-              disabled={loading}
+              disabled={loading || executingCode}
               className="px-4 py-3 text-gray-400 hover:text-white border border-gray-600 hover:border-gray-500 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gray-500"
             >
               Cancel

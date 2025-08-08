@@ -1,7 +1,7 @@
 // Main trading dashboard for portfolio forecasting and backtesting
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 import { ForecastChart, EquityChart, PortfolioPieChart, MetricsTable } from "../../components/charts";
@@ -11,6 +11,97 @@ import { useToast } from "../../components/ui/Toast";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { ClaudePopup } from "../../components/claude";
 import { ClaudeClientError, type GenerationResult } from "../../lib/claude/client";
+import { calculateForecastMetrics, type ForecastData } from "../../lib/utils/forecastMetrics";
+
+// Component for individual forecast stock item with async metrics
+const ForecastStockItem = ({ ticker, data, claudeStrategy }: { 
+  ticker: string, 
+  data: ForecastData,
+  claudeStrategy?: any
+}) => {
+  const [metrics, setMetrics] = useState<{ mse: number; mae: number } | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+
+  useEffect(() => {
+    // Use pre-calculated metrics if available, otherwise calculate them
+    if (data.forecastSeries.length === 0 || data.historySeries.length === 0) {
+      setMetrics(null);
+      setMetricsLoading(false);
+      return;
+    }
+    
+    // Check if metrics are already calculated and stored
+    if (data.metrics) {
+      setMetrics(data.metrics);
+      setMetricsLoading(false);
+      return;
+    }
+    
+    // Fallback: calculate metrics if not pre-calculated (shouldn't happen in normal flow)
+    if (!data.algorithm) {
+      setMetrics(null);
+      setMetricsLoading(false);
+      return;
+    }
+    
+    const loadMetrics = async () => {
+      try {
+        setMetricsLoading(true);
+        const result = await calculateForecastMetrics(
+          data, 
+          data.algorithm, 
+          ticker, 
+          data.algorithm?.toLowerCase() === 'custom ai strategy' ? claudeStrategy : undefined
+        );
+        setMetrics(result);
+      } catch (error) {
+        console.error(`Failed to calculate metrics for ${ticker}:`, error);
+        setMetrics({ mse: 0, mae: 0 });
+      } finally {
+        setMetricsLoading(false);
+      }
+    };
+
+    loadMetrics();
+  }, [ticker, data.forecastSeries.length, data.historySeries.length, data.algorithm, data.metrics]);
+
+  const { historySeries, forecastSeries } = data;
+
+  return (
+    <div>
+      <h4 className="text-sm font-semibold text-cyan-300 mb-2">{ticker}</h4>
+      <ForecastChart
+        historySeries={historySeries}
+        forecastSeries={forecastSeries}
+        height={140}
+        showTitle={false}
+      />
+      {/* Display MSE and MAE for this stock */}
+      <div className="mt-2">
+        {metricsLoading ? (
+          <div className="bg-[#0d1b2a]/50 rounded-lg p-4 text-center">
+            <span className="text-xs text-gray-400">Calculating metrics for {data.algorithm}...</span>
+          </div>
+        ) : metrics ? (
+          <div>
+            <MetricsTable 
+              metrics={metrics}
+              title={`${ticker} Forecast Accuracy`}
+              showTitle={false}
+            />
+            <div className="text-xs text-gray-500 mt-1">
+              Algorithm: {data.algorithm || 'Unknown'} | Data points: {data.historySeries.length}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-[#0d1b2a]/50 rounded-lg p-4 text-center">
+            <span className="text-xs text-red-400">Metrics calculation failed</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // Available stock tickers and algorithm options
 const DOW30 = [
@@ -87,11 +178,7 @@ const Dropdown = ({
   </details>
 );
 
-// Type definition for individual ticker forecast data
-type ForecastData = {
-  historySeries: { date: string; price: number }[];
-  forecastSeries: { date: string; price: number }[];
-};
+// Note: ForecastData type is imported from forecastMetrics utility
 
 export default function Dashboard() {
   // Component state management
@@ -367,7 +454,7 @@ export default function Dashboard() {
             nav: nav,
             weights: portfolioWeights,
             metrics: metrics,
-            algo: btAlgo,
+            algo: btAlgo.toUpperCase(),
             tickers: tickers
           };
           
@@ -379,7 +466,7 @@ export default function Dashboard() {
             body: JSON.stringify({
               data: simulatedBackendResponse,
               originalParams: {
-                algo: btAlgo,
+                algo: btAlgo.toUpperCase(),
                 tickers: tickers,
                 hist_days: btHistDays,
                 lookback: lookBack,
@@ -388,12 +475,7 @@ export default function Dashboard() {
               }
             })
           });
-          
-          if (response.ok) {
-            console.log('Successfully logged Claude backtest session');
-          }
         } catch (logError) {
-          console.warn('Failed to log Claude backtest session:', logError);
           // Don't throw - let the backtest complete even if logging fails
         }
 
@@ -504,53 +586,88 @@ export default function Dashboard() {
           };
         });
         
-        // Apply percentage changes to each ticker individually
-        for (const ticker of tickers) {
-          // Get current price for this specific ticker
-          const currentStock = baseStockData.find(stock => stock.symbol === ticker);
-          const currentPrice = currentStock?.price || 100;
-
-          // Generate mock historical data for context (this would normally come from backend)
-          const historySeries = [];
-          const startDate = new Date(start);
-          
-          for (let i = 0; i < histDays; i += 5) { // Sample every 5 days
-            const date = new Date(startDate);
-            date.setDate(startDate.getDate() + i);
-            const dateStr = date.toISOString().split('T')[0];
+        // Apply percentage changes to each ticker individually using REAL historical data
+        for (let i = 0; i < tickers.length; i++) {
+          const ticker = tickers[i];
+          try {
+            // Add small delay between calls to prevent backend race conditions (same as traditional algorithms)
+            if (i > 0) {
+              await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+            }
             
-            const price = currentPrice * (1 + (Math.random() - 0.5) * 0.02 * i / histDays); // Gradual trend
-            historySeries.push({ date: dateStr, price: Math.max(1, price) });
+            // Call backend API to get REAL YFinance data (same as traditional algorithms)
+            const res = await fetch(`/api/forecast/arima`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ 
+                ticker, 
+                start, 
+                end, 
+                horizon: 1 // We just need historical data, minimal forecast
+              }),
+            });
+    
+            if (!res.ok) {
+              throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            }
+    
+            const payload = await res.json();
+            
+            // Check if we got the expected data structure
+            if (!payload.history_dates || !payload.history_values || 
+                !payload.forecast_dates || !payload.forecast_values) {
+              console.error(`Invalid payload structure for ${ticker}:`, payload);
+              throw new Error(`Invalid response structure: missing required fields`);
+            }
+
+            const toSeries = (d: string[], v: number[]) =>
+              d.map((x, i) => ({ date: x, price: v[i] }));
+
+            // Get REAL historical data from YFinance (same as traditional algorithms)
+            const historySeries = toSeries(payload.history_dates, payload.history_values);
+            
+            // Get the last historical price for continuity
+            const lastHistoricalPrice = historySeries.length > 0 ? 
+              historySeries[historySeries.length - 1].price : 100;
+            
+            // Apply Custom AI percentage changes to real historical data
+            const forecastSeries = percentageChanges.map((change: any) => ({
+              date: change.date,
+              price: lastHistoricalPrice * change.multiplier // Apply to real last price
+            }));
+            
+            tempDataMap[ticker] = {
+              historySeries, // Now uses REAL YFinance data!
+              forecastSeries,
+              algorithm: "Custom AI Strategy"
+            };
+
+            completedTickers++;
+            setFProg((completedTickers / tickers.length) * 100);
+            
+          } catch (err) {
+            console.error(`Custom AI data fetch failed for ${ticker}:`, err);
+            // Add empty data for failed ticker to prevent UI crashes
+            tempDataMap[ticker] = {
+              historySeries: [],
+              forecastSeries: [],
+              algorithm: "Custom AI Strategy"
+            };
+            
+            completedTickers++;
+            setFProg((completedTickers / tickers.length) * 100);
           }
-          
-          // Ensure the last historical point exactly matches the current price for perfect continuity
-          if (historySeries.length > 0) {
-            historySeries[historySeries.length - 1].price = currentPrice;
-          }
-
-          // Get the last historical price to ensure continuity
-          const lastHistoricalPrice = historySeries.length > 0 ? historySeries[historySeries.length - 1].price : currentPrice;
-          
-          
-          // Apply percentage changes starting from the last historical price (not current price)
-          const forecastSeries = percentageChanges.map((change: any) => ({
-            date: change.date,
-            price: lastHistoricalPrice * change.multiplier // Use last historical price for continuity
-          }));
-          
-
-          tempDataMap[ticker] = {
-            historySeries,
-            forecastSeries
-          };
-
-          completedTickers++;
-          setFProg((completedTickers / tickers.length) * 100);
         }
       } else {
         // Handle traditional algorithms
-        for (const ticker of tickers) {
+        for (let i = 0; i < tickers.length; i++) {
+          const ticker = tickers[i];
           try {
+            // Add small delay between calls to prevent backend race conditions
+            if (i > 0) {
+              await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+            }
+            
             const res = await fetch(`/api/forecast/${algo.toLowerCase()}`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -579,16 +696,17 @@ export default function Dashboard() {
         payload.forecast_dates,
         payload.forecast_values,
       ),
+      algorithm: algo
     };
 
     completedTickers++;
     setFProg((completedTickers / tickers.length) * 100);
   } catch (err) {
-    console.error(`forecast ${ticker}:`, err);
     // Add empty data for failed ticker to prevent UI crashes
     tempDataMap[ticker] = {
       historySeries: [],
       forecastSeries: [],
+      algorithm: algo
     };
     // Continue processing other tickers even if this one fails
     completedTickers++;
@@ -597,16 +715,56 @@ export default function Dashboard() {
         }
       }
 
-      // Update state with all forecast results at once
+      // Update state with forecast results first (without metrics)
       setForecastDataMap(tempDataMap);
 
-      // Save forecast session to database for history tracking
+      // Save forecast session to database for history tracking and calculate metrics
       try {
   const forecasts = Object.entries(tempDataMap).filter(([_, data]) => 
     data.historySeries.length > 0 && data.forecastSeries.length > 0
   );
   
   if (forecasts.length > 0) {
+    // Calculate metrics for each ticker and add them to forecast data
+    const updatedForecasts = await Promise.all(
+      forecasts.map(async ([ticker, data]) => {
+        try {
+          // Pass Claude strategy for Custom AI metrics calculation
+          const metrics = await calculateForecastMetrics(
+            data, 
+            data.algorithm!, 
+            ticker,
+            isClaudeForecastSelected ? claudeForecastStrategy : undefined
+          );
+          // Add metrics to the data object
+          const updatedData = { ...data, metrics };
+          return [ticker, updatedData];
+        } catch (error) {
+          console.error(`Failed to calculate metrics for ${ticker} during logging:`, error);
+          // Add default metrics to the data object
+          const updatedData = { ...data, metrics: { mse: 0, mae: 0 } };
+          return [ticker, updatedData];
+        }
+      })
+    );
+    
+    // Update tempDataMap with metrics included
+    updatedForecasts.forEach((result) => {
+      const [ticker, data] = result as [string, ForecastData];
+      tempDataMap[ticker] = data;
+    });
+    
+    // Update state with the enhanced forecast data (including metrics)
+    setForecastDataMap(tempDataMap);
+    
+    // Create metrics map for logging
+    const metricsMap = Object.fromEntries(
+      updatedForecasts.map((result) => {
+        const [ticker, data] = result as [string, ForecastData];
+        return [ticker, data.metrics];
+      })
+    );
+    
     const logPayload = {
       type: 'forecast',
       stocks: forecasts.map(([ticker, _]) => ticker),
@@ -633,7 +791,8 @@ export default function Dashboard() {
           history: data.historySeries,
           forecast: data.forecastSeries
         }
-      ]))
+      ])),
+      metrics: metricsMap
     };
     
     // Send forecast data to logging endpoint
@@ -798,15 +957,12 @@ export default function Dashboard() {
                   const { historySeries, forecastSeries } = data;
 
                   return (
-                    <div key={ticker}>
-                      <h4 className="text-sm font-semibold text-cyan-300 mb-2">{ticker}</h4>
-                      <ForecastChart
-                        historySeries={historySeries}
-                        forecastSeries={forecastSeries}
-                        height={140}
-                        showTitle={false}
-                      />
-                    </div>
+                    <ForecastStockItem
+                      key={ticker}
+                      ticker={ticker}
+                      data={data}
+                      claudeStrategy={isClaudeForecastSelected ? claudeForecastStrategy : undefined}
+                    />
                   );
                 })}
 

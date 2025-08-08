@@ -61,7 +61,12 @@ export default function HistoryPage() {
         setLogs(data.logs)
         setPage(0)
       } else {
-        setLogs(prev => [...prev, ...data.logs])
+        // Filter out any logs that already exist to prevent duplicates
+        setLogs(prev => {
+          const existingIds = new Set(prev.map(log => log.id))
+          const newLogs = data.logs.filter(log => !existingIds.has(log.id))
+          return [...prev, ...newLogs]
+        })
       }
       
       setHasMore(data.logs.length === 20)
@@ -114,6 +119,53 @@ export default function HistoryPage() {
     }
   }
 
+  const handleBulkDelete = async (logIds: string[]) => {
+    if (logIds.length === 0) return
+
+    try {
+      // Call bulk delete API endpoint
+      const res = await fetch('/api/train/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ logIds })
+      })
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to delete logs')
+      }
+
+      // Remove deleted logs from state
+      setLogs(prev => prev.filter(log => !logIds.includes(log.id)))
+    } catch (err) {
+      // Error handling is done in the calling component
+      throw err
+    }
+  }
+
+  const handleDeleteAll = async () => {
+    if (filteredLogs.length === 0) return
+
+    try {
+      // Call delete all API endpoint  
+      const res = await fetch('/api/train/delete-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to delete all logs')
+      }
+
+      // Clear all logs from state
+      setLogs([])
+    } catch (err) {
+      // Error handling is done in the calling component
+      throw err
+    }
+  }
+
   if (authLoading || !user) {
     return (
       <div className="min-h-screen bg-[#0D1B2A] flex items-center justify-center">
@@ -162,6 +214,8 @@ export default function HistoryPage() {
                   hasMore={hasMore}
                   onLoadMore={() => fetchLogs(false)}
                   onDeleteLog={handleDeleteLog}
+                  onBulkDelete={handleBulkDelete}
+                  onDeleteAll={handleDeleteAll}
                 />
               )}
             </section>

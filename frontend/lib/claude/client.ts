@@ -584,6 +584,156 @@ export const loadingHelpers = {
   }
 };
 
+// New function: Generate code only (no execution)
+export async function generateCodeOnly(
+  description: string,
+  mode: 'forecast' | 'backtest',
+  stockData: StockData[], // Required, no defaults
+  securityConfig?: Partial<SecurityConfig>,
+  forecastDays?: number,
+  dashboardParams?: {
+    backtestDays?: number;
+    lookbackDays?: number;
+    evaluationWindow?: number;
+    transactionCost?: number;
+    historyDays?: number;
+  }
+): Promise<{ success: boolean; code?: string; error?: string }> {
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  try {
+    const request: GenerateRequest & { generateOnly: boolean } = {
+      userDescription: description,
+      stockData: stockData, // Use provided stock data directly
+      mode,
+      securityConfig,
+      forecastDays,
+      dashboardParams,
+      generateOnly: true
+    };
+
+    // Validate request
+    validateRequest(request, requestId);
+
+    // Check rate limit
+    const rateLimitCheck = requestTracker.checkRateLimit();
+    if (!rateLimitCheck.allowed) {
+      throw new RateLimitError(
+        'Client-side rate limit exceeded. Please wait before making another request.',
+        rateLimitCheck.remaining,
+        rateLimitCheck.resetTime,
+        requestId
+      );
+    }
+
+    // Execute API call with retry logic
+    const apiCallPromise = executeWithRetry(() => makeApiCall(request), CLIENT_CONFIG.MAX_RETRIES, requestId);
+    requestTracker.registerRequest(request, apiCallPromise as any);
+
+    const response = await apiCallPromise;
+
+    // Handle API response for code generation
+    if (!response.success) {
+      throw new ClaudeApiError(
+        response.error || 'API request failed',
+        undefined,
+        response,
+        requestId
+      );
+    }
+
+    // For code-only generation, the response structure is different
+    return {
+      success: response.success,
+      code: (response as any).code,
+      error: (response as any).error
+    };
+
+  } catch (error: any) {
+    if (error instanceof ClaudeError) {
+      throw error;
+    }
+    
+    // Handle unexpected errors
+    throw ErrorFactory.createFromFetchError(error, requestId);
+  }
+}
+
+// New function: Execute user code
+export async function executeUserCode(
+  userCode: string,
+  mode: 'forecast' | 'backtest',
+  stockData: StockData[], // Required, no defaults
+  securityConfig?: Partial<SecurityConfig>,
+  forecastDays?: number,
+  dashboardParams?: {
+    backtestDays?: number;
+    lookbackDays?: number;
+    evaluationWindow?: number;
+    transactionCost?: number;
+    historyDays?: number;
+  }
+): Promise<GenerationResult> {
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  try {
+    const request: GenerateRequest & { userCode: string } = {
+      userDescription: '', // Not needed for execution
+      stockData: stockData, // Use provided stock data directly
+      mode,
+      securityConfig,
+      forecastDays,
+      dashboardParams,
+      userCode
+    };
+
+    // Check rate limit
+    const rateLimitCheck = requestTracker.checkRateLimit();
+    if (!rateLimitCheck.allowed) {
+      throw new RateLimitError(
+        'Client-side rate limit exceeded. Please wait before making another request.',
+        rateLimitCheck.remaining,
+        rateLimitCheck.resetTime,
+        requestId
+      );
+    }
+
+    // Execute API call with retry logic
+    const apiCallPromise = executeWithRetry(() => makeApiCall(request), CLIENT_CONFIG.MAX_RETRIES, requestId);
+    requestTracker.registerRequest(request, apiCallPromise as any);
+
+    const response = await apiCallPromise;
+
+    // Handle API response
+    if (!response.success) {
+      throw new ClaudeApiError(
+        response.error || 'API request failed',
+        undefined,
+        response,
+        requestId
+      );
+    }
+
+    if (!response.result) {
+      throw new ParseError(
+        'API response missing result data',
+        JSON.stringify(response),
+        requestId
+      );
+    }
+
+    return response.result;
+
+  } catch (error: any) {
+    if (error instanceof ClaudeError) {
+      throw error;
+    }
+    
+    // Handle unexpected errors
+    throw ErrorFactory.createFromFetchError(error, requestId);
+  }
+}
+
 // Export types and main function
 export type { LoadingState, StockData, GenerationResult, SecurityConfig };
 export { ClientErrorType };

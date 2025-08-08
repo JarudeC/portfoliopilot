@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { generatePortfolioWeights, StockData, GenerationResult } from '../../../../lib/claude/generator';
+import { generatePortfolioWeights, generateCodeOnly, executeUserCode, StockData, GenerationResult } from '../../../../lib/claude/generator';
 import { validateSecurity, createSecurityConfig, SecurityConfig } from '../../../../lib/claude/security';
 import { 
   ClaudeError, 
@@ -28,6 +28,9 @@ interface GenerateRequest {
     transactionCost?: number;
     historyDays?: number;
   };
+  // New parameters for code review feature
+  generateOnly?: boolean; // If true, only generate code without execution
+  userCode?: string; // User-provided code to execute
 }
 
 interface GenerateResponse {
@@ -106,14 +109,14 @@ function validateRequestBody(body: any, requestId?: string): { valid: boolean; e
       throw ErrorFactory.createValidationError('Request body must be a JSON object', 'body', body, requestId);
     }
     
-    const { userDescription, stockData, mode, securityConfig, forecastDays, dashboardParams } = body;
+    const { userDescription, stockData, mode, securityConfig, forecastDays, dashboardParams, generateOnly, userCode } = body;
     
-    // Validate userDescription
-    if (!userDescription || typeof userDescription !== 'string') {
+    // Validate userDescription (not required if executing userCode)
+    if (!userCode && (!userDescription || typeof userDescription !== 'string')) {
       throw ErrorFactory.createValidationError('userDescription is required and must be a string', 'userDescription', userDescription, requestId);
     }
     
-    if (userDescription.length > MAX_DESCRIPTION_LENGTH) {
+    if (userDescription && userDescription.length > MAX_DESCRIPTION_LENGTH) {
       throw ErrorFactory.createValidationError(`userDescription must be ${MAX_DESCRIPTION_LENGTH} characters or less`, 'userDescription', userDescription, requestId);
     }
     
@@ -163,7 +166,7 @@ function validateRequestBody(body: any, requestId?: string): { valid: boolean; e
       throw ErrorFactory.createValidationError('securityConfig must be an object if provided', 'securityConfig', securityConfig, requestId);
     }
     
-    return { valid: true, data: { userDescription, stockData, mode, securityConfig, forecastDays, dashboardParams } };
+    return { valid: true, data: { userDescription, stockData, mode, securityConfig, forecastDays, dashboardParams, generateOnly, userCode } };
   } catch (error: any) {
     if (error instanceof ClaudeError) {
       return { valid: false, error };
@@ -280,7 +283,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return createErrorResponse(validation.error!);
     }
     
-    const { userDescription, stockData, mode, securityConfig, forecastDays, dashboardParams } = validation.data!;
+    const { userDescription, stockData, mode, securityConfig, forecastDays, dashboardParams, generateOnly, userCode } = validation.data!;
     
     // 4. Security Validation
     const secConfig = securityConfig ? createSecurityConfig(securityConfig) : createSecurityConfig({});
@@ -344,23 +347,49 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     };
     
-    // 7. Generate Portfolio Weights with Timeout
-    const generateWithTimeout = async (): Promise<GenerationResult> => {
+    // 7. Handle different request types
+    const processRequest = async (): Promise<GenerationResult | { success: boolean; code?: string; error?: string }> => {
       return new Promise(async (resolve, reject) => {
         const timeout = setTimeout(() => {
           reject(new TimeoutError('Request timeout', REQUEST_TIMEOUT, requestId));
         }, REQUEST_TIMEOUT);
         
         try {
-          const result = await generatePortfolioWeights(
-            userDescription,
-            stockData,
-            mode,
-            claudeApiCall,
-            secConfig,
-            forecastDays || 30,
-            dashboardParams
-          );
+          let result: GenerationResult | { success: boolean; code?: string; error?: string };
+          
+          if (userCode) {
+            // Execute user-provided code
+            result = await executeUserCode(
+              userCode,
+              stockData,
+              mode,
+              forecastDays || 30,
+              dashboardParams,
+              secConfig
+            );
+          } else if (generateOnly) {
+            // Generate code only, don't execute
+            result = await generateCodeOnly(
+              userDescription,
+              stockData,
+              mode,
+              claudeApiCall,
+              secConfig,
+              forecastDays || 30,
+              dashboardParams
+            );
+          } else {
+            // Original flow: generate and execute
+            result = await generatePortfolioWeights(
+              userDescription,
+              stockData,
+              mode,
+              claudeApiCall,
+              secConfig,
+              forecastDays || 30,
+              dashboardParams
+            );
+          }
           
           clearTimeout(timeout);
           resolve(result);
@@ -371,10 +400,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       });
     };
     
-    // 8. Execute Generation
-    let result: GenerationResult;
+    // 8. Execute Request
+    let result: GenerationResult | { success: boolean; code?: string; error?: string };
     try {
-      result = await generateWithTimeout();
+      result = await processRequest();
     } catch (generationError: any) {
       console.error('Portfolio generation error:', generationError);
       
@@ -430,10 +459,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     
     // 9. Return Success Response
-    return createSuccessResponse(result, {
-      remaining: rateLimitCheck.remaining,
-      resetTime: rateLimitCheck.resetTime,
-    });
+    if (generateOnly && 'code' in result) {
+      // For code-only generation, return special response format
+      return NextResponse.json({
+        success: result.success,
+        code: result.code,
+        error: result.error,
+        rateLimitInfo: {
+          remaining: rateLimitCheck.remaining,
+          resetTime: rateLimitCheck.resetTime,
+        }
+      });
+    } else {
+      // Normal generation result
+      return createSuccessResponse(result as GenerationResult, {
+        remaining: rateLimitCheck.remaining,
+        resetTime: rateLimitCheck.resetTime,
+      });
+    }
     
   } catch (error: any) {
     // 10. Global Error Handler

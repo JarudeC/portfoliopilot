@@ -659,3 +659,190 @@ export async function generatePortfolioWeights(
     executionTime: Date.now() - startTime
   };
 }
+
+// New function: Generate code only (no execution)
+export async function generateCodeOnly(
+  userDescription: string, 
+  stockData: StockData[],
+  mode: 'forecast' | 'backtest',
+  claudeApiCall?: (prompt: string) => Promise<string>,
+  securityConfig?: SecurityConfig,
+  forecastDays: number = 30,
+  dashboardParams?: {
+    backtestDays?: number;
+    lookbackDays?: number;
+    evaluationWindow?: number;
+    transactionCost?: number;
+    historyDays?: number;
+  }
+): Promise<{ success: boolean; code?: string; error?: string; securityValidation?: any }> {
+  const startTime = Date.now();
+  
+  if (!stockData || stockData.length === 0) {
+    return {
+      success: false,
+      error: 'Empty stock data'
+    };
+  }
+  
+  // Security validation of user prompt
+  const promptSecurity = validateSecurity(userDescription, undefined, securityConfig);
+  if (!promptSecurity.overallValid) {
+    return {
+      success: false,
+      error: `Security validation failed: ${promptSecurity.promptValidation.blockedReason}`,
+      securityValidation: {
+        promptValid: false,
+        blockedReason: promptSecurity.promptValidation.blockedReason,
+        riskLevel: promptSecurity.combinedRiskLevel
+      }
+    };
+  }
+  
+  // Try Claude API generation
+  if (claudeApiCall) {
+    try {
+      const prompt = createRigidPrompt(userDescription, mode);
+      const response = await claudeApiCall(prompt);
+      
+      // Extract and clean response
+      const extractedCode = extractTypeScriptCode(response, mode);
+      
+      // Security validation of generated code
+      const codeSecurity = validateSecurity(userDescription, extractedCode, securityConfig);
+      if (!codeSecurity.overallValid) {
+        return {
+          success: false,
+          error: `Generated code blocked by security: ${codeSecurity.codeValidation?.blockedReason}`,
+          securityValidation: {
+            promptValid: true,
+            codeValid: false,
+            blockedReason: codeSecurity.codeValidation?.blockedReason,
+            riskLevel: codeSecurity.combinedRiskLevel
+          }
+        };
+      }
+      
+      // Validate and fix code
+      const validation = validateAndFixCode(extractedCode, mode);
+      let codeToReturn = validation.fixedCode || extractedCode;
+      
+      return {
+        success: true,
+        code: codeToReturn,
+        securityValidation: {
+          promptValid: true,
+          codeValid: true,
+          riskLevel: 'none'
+        }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Code generation failed: ${error}`
+      };
+    }
+  }
+  
+  // Fallback - return template code
+  const fallbackFunction = mode === 'forecast' ? FORECAST_FALLBACK_FUNCTION : BACKTEST_FALLBACK_FUNCTION;
+  return {
+    success: true,
+    code: fallbackFunction,
+    error: 'Used fallback template'
+  };
+}
+
+// New function: Execute user-provided code
+export async function executeUserCode(
+  code: string,
+  stockData: StockData[],
+  mode: 'forecast' | 'backtest',
+  forecastDays: number = 30,
+  dashboardParams?: any,
+  securityConfig?: SecurityConfig
+): Promise<GenerationResult> {
+  const startTime = Date.now();
+  
+  if (!stockData || stockData.length === 0) {
+    const fallbackResult = generateFallbackResult([{ symbol: 'DEFAULT', price: 100 }], 1, mode, forecastDays);
+    return {
+      success: false,
+      type: mode,
+      ...(mode === 'backtest' ? { weights: fallbackResult as number[] } : { predictions: fallbackResult as any[] }),
+      error: 'Empty stock data',
+      fallbackUsed: true,
+      executionTime: Date.now() - startTime
+    };
+  }
+  
+  try {
+    // Security validation of code before execution
+    const codeSecurity = validateSecurity('', code, securityConfig);
+    if (!codeSecurity.overallValid) {
+      const fallbackResult = generateFallbackResult(stockData, 1, mode, forecastDays);
+      return {
+        success: false,
+        type: mode,
+        ...(mode === 'backtest' ? { weights: fallbackResult as number[] } : { predictions: fallbackResult as any[] }),
+        error: `Code blocked by security: ${codeSecurity.codeValidation?.blockedReason}`,
+        fallbackUsed: true,
+        executionTime: Date.now() - startTime,
+        securityValidation: {
+          promptValid: true,
+          codeValid: false,
+          blockedReason: codeSecurity.codeValidation?.blockedReason,
+          riskLevel: codeSecurity.combinedRiskLevel
+        }
+      };
+    }
+    
+    // Validate and fix code
+    const validation = validateAndFixCode(code, mode);
+    let codeToExecute = validation.fixedCode || code;
+    
+    // Strip TypeScript types for JavaScript execution
+    codeToExecute = stripTypeScriptTypes(codeToExecute);
+    
+    // Execute with timeout
+    const execution = await executeWithTimeout(codeToExecute, stockData, mode, forecastDays, 3000, dashboardParams);
+    
+    if (execution.success && execution.result) {
+      return {
+        success: true,
+        type: mode,
+        ...(mode === 'backtest' ? { weights: execution.result as number[] } : { predictions: execution.result as any[] }),
+        code: codeToExecute,
+        fallbackUsed: false,
+        executionTime: Date.now() - startTime,
+        securityValidation: {
+          promptValid: true,
+          codeValid: true,
+          riskLevel: 'none'
+        }
+      };
+    } else {
+      // Execution failed, use fallback
+      const fallbackResult = generateFallbackResult(stockData, 1, mode, forecastDays);
+      return {
+        success: true,
+        type: mode,
+        ...(mode === 'backtest' ? { weights: fallbackResult as number[] } : { predictions: fallbackResult as any[] }),
+        error: execution.error || 'Execution failed',
+        fallbackUsed: true,
+        executionTime: Date.now() - startTime
+      };
+    }
+  } catch (error) {
+    // Execution error, use fallback
+    const fallbackResult = generateFallbackResult(stockData, 1, mode, forecastDays);
+    return {
+      success: true,
+      type: mode,
+      ...(mode === 'backtest' ? { weights: fallbackResult as number[] } : { predictions: fallbackResult as any[] }),
+      error: `Execution error: ${error}`,
+      fallbackUsed: true,
+      executionTime: Date.now() - startTime
+    };
+  }
+}
