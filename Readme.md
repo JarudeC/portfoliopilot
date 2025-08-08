@@ -104,7 +104,7 @@ https://github.com/user-attachments/assets/a731a76a-0967-4a3c-9bcb-78a20ff75c7e
 
 ### Custom AI Strategy Generation
 
-https://github.com/user-attachments/assets/9fae1330-6469-4382-babf-b3414b1b8754
+https://github.com/user-attachments/assets/87a446d5-4fb9-42b3-aa6b-6221f315a073
 
 **Getting Started:**
 1. **Sign In/Login** - Authenticate using OAuth through Supabase
@@ -112,7 +112,7 @@ https://github.com/user-attachments/assets/9fae1330-6469-4382-babf-b3414b1b8754
 3. **Pick Stocks** - Select up to 8 stocks from the DOW30 for your portfolio
 4. **Choose Strategy Type**:
    - **Pre-built Models** - Select from classical algorithms (ARIMA, LSTM, Markowitz, etc.)
-   - **Custom AI Strategy** - Describe your investment approach in natural language
+   - **Custom AI Strategy** - Describe your investment approach in natural language, and review/edit code produced by AI
 5. **Train & Analyze** - Execute your strategy and view comprehensive results
 6. **View History** - Review past training results and portfolio performance
 
