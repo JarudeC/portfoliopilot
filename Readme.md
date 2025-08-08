@@ -43,7 +43,9 @@ https://github.com/user-attachments/assets/5321954a-5d97-45d7-9c7b-e68909ab53b1
 
 **Custom AI Strategies**: Leverage Anthropic Claude to generate bespoke investment algorithms based on natural language descriptions
 
-![Custom AI Model](https://github.com/user-attachments/assets/1e0b5522-33b8-45ca-a543-1a14d966659c)
+![custom ai model 1](https://github.com/user-attachments/assets/acc141fd-f2a1-4b98-b1f8-c70076b35f64)
+
+![custom ai model 2](https://github.com/user-attachments/assets/d10bf847-97ab-4cec-a2a1-3a7b804dbf4b)
 
 **History** - View past training results and portfolio performance analytics.
 
