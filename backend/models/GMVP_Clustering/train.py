@@ -41,11 +41,11 @@ def _good_cols(look: pd.DataFrame) -> pd.Index:
 # Public API
 def run(
     prices: pd.DataFrame,
-    lookback: int = BACKLOOK,
-    eval_win: int = EVAL_WINDOW,
+    lookback: int,
+    eval_win: int,
+    tc: float,
     clusters: int = 12,
     max_cluster: int = 80,
-    tc: float = TC_RATE,
     write_files: bool = False,
     tag: str | None = None,
 ) -> Tuple[pd.Series, Dict[str, float], Dict[str, float]]:
@@ -124,7 +124,7 @@ def run(
             print(f"[{k:>3}/{total_steps}] tickers={len(cols):3d}   r={last:+.4f}",
                   flush=True)
 
-    nav_series = pd.Series(nav, index=rets_all.index[: len(nav)], name="NAV")
+    nav_series = pd.Series(nav, index=rets_all.index[lookback : lookback + len(nav)], name="NAV")
     metrics = compute_metrics_from_nav(nav_series)
     final_weights = w_prev.to_dict() if w_prev is not None else {}
 

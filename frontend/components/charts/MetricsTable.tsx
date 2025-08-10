@@ -1,7 +1,7 @@
 'use client'
 
 interface MetricsTableProps {
-  metrics: Record<string, number>
+  metrics: Record<string, string | number>
   title?: string
   showTitle?: boolean
 }
@@ -24,22 +24,25 @@ export default function MetricsTable({
     )
   }
 
+  // Define consistent order for metrics display (dashboard order)
+  const metricOrder = [
+    'Return',
+    'AnnualReturn', 
+    'DailyVol',
+    'AnnualVol',
+    'Sharpe',
+    'Sortino',
+    'mse',
+    'mae'
+  ]
+
   const metricLabels: Record<string, string> = {
-    // Backtest metrics
     Return: "Return",
     AnnualReturn: "Annual Ret.",
     DailyVol: "Daily Vol.",
     AnnualVol: "Annual Vol.",
     Sharpe: "Sharpe",
     Sortino: "Sortino",
-    total_return: "Total Return",
-    annual_return: "Annual Return",
-    volatility: "Volatility",
-    sharpe_ratio: "Sharpe Ratio",
-    max_drawdown: "Max Drawdown",
-    win_rate: "Win Rate",
-    profit_factor: "Profit Factor",
-    // Forecast metrics
     mse: "MSE",
     mae: "MAE"
   }
@@ -69,16 +72,21 @@ export default function MetricsTable({
             </tr>
           </thead>
           <tbody>
-            {Object.entries(metrics).map(([key, value]) => (
-              <tr key={key} className="border-t border-[#1B263B]">
-                <td className="py-2 text-gray-300">
-                  {metricLabels[key] || key}
-                </td>
-                <td className="py-2 text-right font-semibold">
-                  {typeof value === "number" ? formatValue(key, value) : value ?? "—"}
-                </td>
-              </tr>
-            ))}
+            {metricOrder
+              .filter(key => key in metrics)
+              .map((key) => {
+                const value = metrics[key]
+                return (
+                  <tr key={key} className="border-t border-[#1B263B]">
+                    <td className="py-2 text-gray-300">
+                      {metricLabels[key] || key}
+                    </td>
+                    <td className="py-2 text-right font-semibold">
+                      {typeof value === "number" ? formatValue(key, value) : value ?? "—"}
+                    </td>
+                  </tr>
+                )
+              })}
           </tbody>
         </table>
       </div>

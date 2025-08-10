@@ -89,31 +89,52 @@ You are a TypeScript code generator. You MUST respond with ONLY a valid TypeScri
 6. Do NOT include imports, exports, or interface definitions
 7. Return ONLY the function code
 
-IMPORTANT - stockData structure:
-Each stock is an object with CURRENT data only: {symbol: string, price: number, marketCap?: number, volume?: number}
-You do NOT have historical price arrays. Only current price, marketCap, and volume.
+IMPORTANT - stockData structure for DYNAMIC REBALANCING:
+Each stock object contains: {symbol: string, price: number, lookbackPrices?: number[], lookbackDates?: string[], marketCap?: number, volume?: number}
+- price: current price at rebalancing time
+- lookbackPrices: array of historical prices for the lookback period
+- lookbackDates: corresponding dates for lookbackPrices
+- You can analyze trends, volatility, momentum using lookbackPrices/lookbackDates
 
 The dashboardParams object contains:
-- backtestDays: number of historical days for backtesting
-- lookbackDays: lookback period for analysis  
-- evaluationWindow: evaluation window size
-- transactionCost: transaction cost percentage
+- backtestDays: total historical days for backtesting
+- lookbackDays: lookback period for analysis (data window size)
+- evaluationWindow: rebalancing frequency in days  
+- transactionCost: transaction cost rate applied when weights change
+
+Your function will be called at EACH rebalancing period with fresh market data.
+Analyze the lookback data to make dynamic allocation decisions based on recent market conditions.
 
 The function should implement this portfolio strategy: {userDescription}
 
-Since you only have current data, focus on strategies using:
-- Current price relationships
-- Market cap weighting variations
-- Volume-based allocations
-- Price-based ratios
-- Risk parity approximations
+You can implement sophisticated strategies using:
+- Momentum analysis (price trends from lookbackPrices)
+- Mean reversion (price vs historical average)  
+- Volatility-based allocation (risk parity)
+- Technical indicators (moving averages, RSI, etc.)
+- Market cap and fundamental weighting
+- Multi-factor approaches
 
 Example format:
 function calculateWeights(stockData: any[], dashboardParams: any = {}): number[] {
   // Implementation based on: {userDescription}
-  // Use stockData[i].price, stockData[i].marketCap, stockData[i].volume
-  const weights = stockData.map(() => 1.0 / stockData.length);
-  return weights;
+  // Analyze stockData[i].lookbackPrices for trends, volatility
+  // Use stockData[i].price for current valuation
+  // Consider dashboardParams.transactionCost for turnover management
+  
+  const weights = stockData.map(stock => {
+    // Example: momentum strategy
+    if (stock.lookbackPrices && stock.lookbackPrices.length > 10) {
+      const recentAvg = stock.lookbackPrices.slice(-10).reduce((a,b) => a+b) / 10;
+      const momentum = stock.price / recentAvg - 1;
+      return Math.max(0, momentum); // Positive momentum weighting
+    }
+    return 1.0 / stockData.length; // Fallback to equal weight
+  });
+  
+  // Normalize weights
+  const sum = weights.reduce((a,b) => a+b, 0);
+  return sum > 0 ? weights.map(w => w/sum) : stockData.map(() => 1.0/stockData.length);
 }
 
 Generate the calculateWeights function now:

@@ -124,7 +124,7 @@ export default function Dashboard() {
   const [forecastDays, setFcastDays] = useState(14);
   const [nav, setNav] = useState<Record<string, number> | null>(null);
   const [weights, setWeights] = useState<Record<string, number> | null>(null);
-  const [metrics, setMetrics] = useState<Record<string, number> | null>(null);
+  const [metrics, setMetrics] = useState<Record<string, string | number> | null>(null);
   const [btHistDays, setBtHistDays] = useState(365);
   const [fLoading, setFLoading] = useState(false);
   const [fProg, setFProg] = useState(0);
@@ -337,40 +337,216 @@ export default function Dashboard() {
           portfolioWeights[ticker] = claudeWeights[i] || 0;
         });
 
-        // Generate simple NAV curve for visualization (this would ideally come from backend simulation)
+        // Generate REAL NAV curve using historical data and AI weights (matching traditional backend format)
         const nav: Record<string, number> = {};
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - btHistDays);
+        let metrics: Record<string, string | number> = {};
         
-        let currentValue = 1.0;
-        for (let i = 0; i < btHistDays; i += 5) { // Sample every 5 days
-          const date = new Date(startDate);
-          date.setDate(startDate.getDate() + i);
-          const dateStr = date.toISOString().split('T')[0];
+        try {
+          // Use same date calculation as traditional algorithms
+          // Backend uses trading days, so we need to go back more calendar days to get equivalent data
+          // Approximately 365 trading days = 520 calendar days (accounting for weekends/holidays)
+          const today = new Date();
+          const end = today.toISOString().slice(0, 10);
+          const tradingDayMultiplier = 1.43; // ~365 trading days = ~520 calendar days
+          const calendarDaysBack = Math.round(btHistDays * tradingDayMultiplier);
+          const start = new Date(today.getTime() - calendarDaysBack * 86_400_000).toISOString().slice(0, 10);
           
-          // Simple random walk for demonstration (in reality, this would be calculated from historical data)
-          currentValue *= (1 + (Math.random() - 0.5) * 0.02); // ±1% change
-          nav[dateStr] = Math.max(0.1, currentValue); // Prevent negative values
+          // Fetch historical data for all tickers (same as forecast logic)
+          const tickerDataPromises = tickers.map(async (ticker, index) => {
+            const res = await fetch(`/api/forecast/arima`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ticker, start, end, horizon: 1 }),
+            });
+            
+            if (!res.ok) {
+              throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            }
+            
+            const payload = await res.json();
+            
+            // Check same structure as forecast logic
+            if (!payload.history_dates || !payload.history_values) {
+              throw new Error(`Invalid response structure for ${ticker}`);
+            }
+            
+            return {
+              ticker,
+              weight: claudeWeights[index] || 0,
+              dates: payload.history_dates,
+              prices: payload.history_values
+            };
+          });
+          
+          const allTickerData = await Promise.all(tickerDataPromises);
+          
+          // Use same backtest logic as traditional algorithms (lookback + eval_win windows)
+          if (allTickerData.length > 0 && allTickerData[0].dates.length > 1) {
+            const dates = allTickerData[0].dates;
+            const prices = allTickerData.map(t => t.prices);
+            
+            // Same logic as NaiveMarkowitz: 
+            const firstSig = lookBack;
+            const numWin = Math.floor((dates.length - firstSig) / evalWin);
+            
+            let portfolioValue = 1.0;
+            let prevWeights: number[] | null = null;
+            const portfolioReturns: number[] = [];
+            
+            // Process in evaluation windows like traditional algorithms
+            for (let step = 0; step < numWin; step++) {
+              const windowStart = firstSig + step * evalWin;
+              
+              // Prepare lookback data for AI rebalancing (same as traditional algorithms)
+              const lookbackStart = Math.max(0, windowStart - lookBack);
+              const lookbackData = allTickerData.map(tickerData => {
+                const lookbackPrices = tickerData.prices.slice(lookbackStart, windowStart);
+                const lookbackDates = dates.slice(lookbackStart, windowStart);
+                
+                return {
+                  symbol: tickerData.ticker,
+                  price: tickerData.prices[windowStart - 1] || tickerData.prices[tickerData.prices.length - 1], // Current price
+                  lookbackPrices,
+                  lookbackDates
+                };
+              });
+              
+              // Get dynamic weights from AI using current market data
+              let currentWeights: number[];
+              try {
+                if (!claudeBacktestStrategy.code) {
+                  throw new Error('No AI strategy code available');
+                }
+                
+                const { executeUserCode } = await import('../../lib/claude/client');
+                // Convert lookbackData to StockData format expected by executeUserCode
+                const stockData = lookbackData.map(data => ({
+                  symbol: data.symbol,
+                  price: data.price
+                }));
+                
+                const result = await executeUserCode(
+                  claudeBacktestStrategy.code,
+                  'backtest',
+                  stockData,
+                  undefined,
+                  undefined,
+                  {
+                    backtestDays: btHistDays,
+                    lookbackDays: lookBack,
+                    evaluationWindow: evalWin,
+                    transactionCost: tc
+                  }
+                );
+                
+                if (result.success && result.weights && Array.isArray(result.weights)) {
+                  currentWeights = result.weights;
+                  
+                  // Normalize weights to sum to 1
+                  const sum = currentWeights.reduce((s, w) => s + Math.abs(w), 0);
+                  if (sum > 0) {
+                    currentWeights = currentWeights.map(w => w / sum);
+                  } else {
+                    throw new Error('Invalid weights from AI');
+                  }
+                } else {
+                  throw new Error('AI failed to generate weights');
+                }
+              } catch (error) {
+                console.warn(`AI rebalancing failed at step ${step}, using equal weights:`, error);
+                // Fallback to equal weights
+                currentWeights = new Array(allTickerData.length).fill(1.0 / allTickerData.length);
+              }
+              
+              // Calculate transaction costs (same as traditional algorithms)
+              let transactionCost = 0;
+              if (prevWeights === null) {
+                // Initial buy - cost on full position
+                transactionCost = currentWeights.reduce((sum, w) => sum + Math.abs(w), 0) * tc;
+              } else {
+                // Rebalancing cost - cost on weight changes
+                const turnover = currentWeights.reduce((sum, w, i) => sum + Math.abs(w - (prevWeights![i] || 0)), 0);
+                transactionCost = turnover * tc;
+              }
+              
+              // Calculate returns for this evaluation window
+              const windowEnd = Math.min(windowStart + evalWin, dates.length);
+              
+              for (let day = windowStart; day < windowEnd; day++) {
+                if (day === 0) continue;
+                
+                let dailyReturn = 0;
+                for (let i = 0; i < allTickerData.length; i++) {
+                  if (day < prices[i].length && prices[i][day - 1] > 0) {
+                    const stockReturn = (prices[i][day] - prices[i][day - 1]) / prices[i][day - 1];
+                    dailyReturn += stockReturn * currentWeights[i];
+                  }
+                }
+                
+                // Apply transaction cost only on first day of window
+                if (day === windowStart) {
+                  dailyReturn -= transactionCost;
+                }
+                
+                portfolioReturns.push(dailyReturn);
+                portfolioValue *= (1 + dailyReturn);
+                nav[dates[day]] = portfolioValue;
+              }
+              
+              prevWeights = [...currentWeights];
+            }
+            
+            // Calculate metrics exactly like backend algorithms
+            const navValues = Object.values(nav);
+            const totalReturn = (navValues[navValues.length - 1] - navValues[0]) / navValues[0];
+            const avgDailyReturn = portfolioReturns.reduce((sum, ret) => sum + ret, 0) / portfolioReturns.length;
+            const dailyVol = Math.sqrt(portfolioReturns.reduce((sum, ret) => sum + Math.pow(ret - avgDailyReturn, 2), 0) / (portfolioReturns.length - 1));
+            
+            // Annualized return - geometric method like backend models
+            const tradingDays = 252;
+            const annualReturn = Math.pow(1 + totalReturn, tradingDays / portfolioReturns.length) - 1;
+            const annualVol = dailyVol * Math.sqrt(tradingDays);
+            
+            // Sharpe ratio (matches backend: daily_mean / daily_vol * sqrt(252))
+            const rf = 0; // Risk-free rate assumed to be 0 like backend
+            const sharpeRatio = dailyVol > 0 ? (avgDailyReturn / dailyVol * Math.sqrt(tradingDays)) : 0;
+            
+            // Sortino ratio (matches backend: daily_mean / downside_std * sqrt(252))
+            const negativeReturns = portfolioReturns.filter(ret => ret < avgDailyReturn);
+            const downsideStd = negativeReturns.length > 0 
+              ? Math.sqrt(negativeReturns.reduce((sum, ret) => sum + Math.pow(ret - avgDailyReturn, 2), 0) / negativeReturns.length)
+              : 0;
+            const sortinoRatio = downsideStd > 0 ? (avgDailyReturn / downsideStd * Math.sqrt(tradingDays)) : 0;
+            
+            // Format metrics as strings to match backend format exactly
+            metrics = {
+              'Return': `${(totalReturn * 100).toFixed(2)}%`,
+              'AnnualReturn': `${(annualReturn * 100).toFixed(2)}%`, 
+              'DailyVol': `${(dailyVol * 100).toFixed(2)}%`,
+              'AnnualVol': `${(annualVol * 100).toFixed(2)}%`,
+              'Sharpe': `${sharpeRatio.toFixed(2)}`,
+              'Sortino': `${sortinoRatio.toFixed(2)}`
+            };
+          } else {
+            throw new Error('Insufficient historical data');
+          }
+          
+        } catch (error) {
+          console.error('Failed to calculate real Custom AI backtest:', error);
+          
+          // Fallback: create minimal nav with current date
+          const today = new Date().toISOString().split('T')[0];
+          nav[today] = 1.0;
+          
+          metrics = {
+            'Return': "0.00%",
+            'AnnualReturn': "0.00%",
+            'DailyVol': "0.00%",
+            'AnnualVol': "0.00%",
+            'Sharpe': "0.00",
+            'Sortino': "0.00"
+          };
         }
-
-        // Generate basic metrics
-        const navValues = Object.values(nav);
-        const returns = navValues.slice(1).map((val, i) => (val - navValues[i]) / navValues[i]);
-        const avgReturn = returns.reduce((sum, ret) => sum + ret, 0) / returns.length;
-        const volatility = Math.sqrt(returns.reduce((sum, ret) => sum + Math.pow(ret - avgReturn, 2), 0) / returns.length);
-        const sharpeRatio = avgReturn / volatility;
-        const maxDrawdown = Math.max(...navValues.map((_, i) => 
-          Math.max(...navValues.slice(0, i + 1)) - navValues[i]
-        )) / Math.max(...navValues);
-
-        const metrics = {
-          'Return': (navValues[navValues.length - 1] - navValues[0]) / navValues[0], // Total return as decimal
-          'AnnualReturn': ((navValues[navValues.length - 1] - navValues[0]) / navValues[0]) * (252 / btHistDays), // Annualized
-          'Sharpe': sharpeRatio,
-          'DailyVol': volatility,
-          'MaxDrawdown': maxDrawdown,
-          'NumTrades': tickers.length // Number of assets
-        };
 
         // Set results
         setWeights(portfolioWeights);
@@ -478,13 +654,13 @@ export default function Dashboard() {
     setOverallMetrics(null);
     setForecastingTickers([...tickers]);
 
+    // Use trading days like backtest (backend uses trading days for consistency)
+    // Approximately 365 trading days = 520 calendar days (accounting for weekends/holidays)
     const today = new Date();
-    const maxEndDate = new Date("2024-12-31");
-    const endDate = today > maxEndDate ? maxEndDate : today;
-    const end = endDate.toISOString().slice(0, 10);
-    const start = new Date(endDate.getTime() - histDays * 86_400_000)
-      .toISOString()
-      .slice(0, 10);
+    const end = today.toISOString().slice(0, 10);
+    const tradingDayMultiplier = 1.43; // ~365 trading days = ~520 calendar days
+    const calendarDaysBack = Math.round(histDays * tradingDayMultiplier);
+    const start = new Date(today.getTime() - calendarDaysBack * 86_400_000).toISOString().slice(0, 10);
 
     const totalTickers = tickers.length;
     let completedTickers = 0;
@@ -499,38 +675,19 @@ export default function Dashboard() {
           return;
         }
 
-        // Convert Claude predictions to the same format as traditional algorithms
+        // Use pre-generated predictions from Claude strategy (no additional API calls needed)
         const claudePredictions = claudeForecastStrategy.predictions;
         
-        // Get the base stock data to calculate percentage changes from first prediction
-        const baseStockData = getStockDataFromTickers();
-        const referencePredictions = claudePredictions; // These are based on first stock
-        const referenceStock = baseStockData[0]; // The stock used for generating predictions
-        const referencePrice = referenceStock?.price || 100;
-        
-        // Detect if predictions are multipliers or absolute prices
-        const firstPrediction = referencePredictions[0];
-        const isMultiplier = firstPrediction && firstPrediction.price >= 0.5 && firstPrediction.price <= 2.0;
-        
-        const percentageChanges = referencePredictions.map((pred: any, index: number) => {
-          const multiplier = isMultiplier ? pred.price : (pred.price / referencePrice);
-          return {
-            date: pred.date,
-            multiplier: multiplier,
-            confidence: pred.confidence
-          };
-        });
-        
-        // Apply percentage changes to each ticker individually using REAL historical data
+        // Now apply the strategy to each ticker
         for (let i = 0; i < tickers.length; i++) {
           const ticker = tickers[i];
           try {
-            // Add small delay between calls to prevent backend race conditions (same as traditional algorithms)
+            // Add small delay between calls to prevent backend race conditions
             if (i > 0) {
               await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
             }
             
-            // Call backend API to get REAL YFinance data (same as traditional algorithms)
+            // Get REAL YFinance historical data first (for context)
             const res = await fetch(`/api/forecast/arima`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -549,30 +706,46 @@ export default function Dashboard() {
             const payload = await res.json();
             
             // Check if we got the expected data structure
-            if (!payload.history_dates || !payload.history_values || 
-                !payload.forecast_dates || !payload.forecast_values) {
-              console.error(`Invalid payload structure for ${ticker}:`, payload);
-              throw new Error(`Invalid response structure: missing required fields`);
+            if (!payload.history_dates || !payload.history_values) {
+              throw new Error(`Invalid response structure for ${ticker}`);
             }
-
-            const toSeries = (d: string[], v: number[]) =>
-              d.map((x, i) => ({ date: x, price: v[i] }));
-
-            // Get REAL historical data from YFinance (same as traditional algorithms)
-            const historySeries = toSeries(payload.history_dates, payload.history_values);
             
-            // Get the last historical price for continuity
-            const lastHistoricalPrice = historySeries.length > 0 ? 
-              historySeries[historySeries.length - 1].price : 100;
-            
-            // Apply Custom AI percentage changes to real historical data
-            const forecastSeries = percentageChanges.map((change: any) => ({
-              date: change.date,
-              price: lastHistoricalPrice * change.multiplier // Apply to real last price
+            // Prepare historical data for display
+            const historySeries = payload.history_dates.map((date: string, index: number) => ({
+              date,
+              price: payload.history_values[index]
             }));
             
+            // Apply Claude's pre-generated predictions to this ticker's historical data
+            let forecastSeries = [];
+            if (claudePredictions && Array.isArray(claudePredictions)) {
+              const lastPrice = payload.history_values[payload.history_values.length - 1] || 100;
+              
+              // Determine if predictions are absolute prices or relative multipliers
+              const firstPred = claudePredictions[0];
+              const isMultiplier = firstPred && firstPred.price >= 0.5 && firstPred.price <= 2.0;
+              
+              forecastSeries = claudePredictions.map((pred: any) => ({
+                date: pred.date,
+                price: isMultiplier ? lastPrice * pred.price : pred.price
+              }));
+            } else {
+              console.warn(`No Claude predictions available for ${ticker}, using fallback`);
+              // Fallback: simple trend continuation
+              const lastPrice = payload.history_values[payload.history_values.length - 1] || 100;
+              const startDate = new Date(end);
+              for (let j = 1; j <= forecastDays; j++) {
+                const futureDate = new Date(startDate);
+                futureDate.setDate(startDate.getDate() + j);
+                forecastSeries.push({
+                  date: futureDate.toISOString().split('T')[0],
+                  price: lastPrice * (1 + (Math.random() - 0.5) * 0.02) // Small random walk
+                });
+              }
+            }
+            
             tempDataMap[ticker] = {
-              historySeries, // Now uses REAL YFinance data!
+              historySeries,
               forecastSeries,
               algorithm: "Custom AI Strategy"
             };
@@ -856,7 +1029,7 @@ export default function Dashboard() {
                 >
                   Reset Defaults
                 </button>
-                <Filter label="History Days">
+                <Filter label="History Days (Trading)">
                   <Select
                     value={histDays}
                     onChange={(e) => setHistDays(+e.target.value)}
@@ -996,7 +1169,7 @@ export default function Dashboard() {
                 >
                   Reset Defaults
                 </button>
-                <Filter label="Back-test Days">
+                <Filter label="Back-test Days (Trading)">
                   <Select
                     value={btHistDays}
                     onChange={(e) => setBtHistDays(+e.target.value)}
@@ -1089,7 +1262,14 @@ export default function Dashboard() {
                       fontSize={12}
                     />
                     <Tooltip
-                      labelFormatter={(d) => d}
+                      contentStyle={{
+                        background: "#1B263B",
+                        border: "none",
+                        borderRadius: "4px",
+                        color: "#E0E8F9",
+                        fontSize: "12px",
+                      }}
+                      labelFormatter={(d) => d.slice(0, 10)}
                       formatter={(v: number) => v.toFixed(4)}
                     />
                     <Line

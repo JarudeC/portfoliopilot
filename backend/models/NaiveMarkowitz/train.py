@@ -26,10 +26,10 @@ np.random.seed(43)
 
 def run(
     prices: pd.DataFrame,
-    lookback: int               = 252,
-    eval_win: int               = 5,
-    eta: float                  = 0.02,
-    tc: float                   = 0.002,
+    lookback: int,
+    eval_win: int,
+    eta: float,
+    tc: float,
     write_files: bool           = False,
     tag: str | None             = None,
 ) -> Tuple[pd.Series, Dict[str,float], Dict[str,float]]:
@@ -81,7 +81,7 @@ def run(
 
     nav_series = pd.Series(
         nav[1:],
-        index = dates.iloc[first_sig : first_sig + len(nav) - 1],
+        index = dates.iloc[first_sig : first_sig + num_win * eval_win : eval_win],
         name  = "NAV"
     )
     weights = pd.Series(w_prev, index = hist.columns).to_dict()

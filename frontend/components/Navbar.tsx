@@ -101,10 +101,10 @@ export default function Navbar() {
               </button>
 
               {userMenuOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-[#14273F] border border-[#1B263B] rounded-lg shadow-lg py-2">
+                <div className="absolute right-0 mt-2 min-w-48 w-max max-w-80 bg-[#14273F] border border-[#1B263B] rounded-lg shadow-lg py-2">
                   <div className="px-4 py-2 border-b border-[#1B263B]">
-                    <p className="text-sm font-medium text-white">{getUserDisplayName()}</p>
-                    <p className="text-xs text-gray-400">{user.email}</p>
+                    <p className="text-sm font-medium text-white truncate">{getUserDisplayName()}</p>
+                    <p className="text-xs text-gray-400 truncate">{user.email}</p>
                   </div>
                   <button
                     onClick={handleSignOut}

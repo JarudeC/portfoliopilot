@@ -48,17 +48,20 @@ export default function LogDetails({ log }: LogDetailsProps) {
         const finalReturn = results.cumulative_returns[results.cumulative_returns.length - 1]
         const returns = results.returns || []
         
-        // Calculate basic metrics - values should be in decimal form for MetricsTable
-        const totalReturn = (finalReturn - 1) // Keep as decimal, MetricsTable will format
+        // Calculate basic metrics - use same format as dashboard
+        const totalReturn = (finalReturn - 1) * 100 // Convert to percentage
         const volatility = returns.length > 0 ? 
-          Math.sqrt(returns.reduce((sum: number, r: number) => sum + r * r, 0) / returns.length) * Math.sqrt(252) : 0
+          Math.sqrt(returns.reduce((sum: number, r: number) => sum + r * r, 0) / returns.length) * Math.sqrt(252) * 100 : 0
+        const sharpeRatio = volatility > 0 ? (totalReturn / volatility) : 0
         
+        // Use same keys and order as dashboard
         metrics = {
-          total_return: totalReturn,
-          annual_return: totalReturn, // Simplified
-          volatility: volatility,
-          sharpe_ratio: volatility > 0 ? totalReturn / volatility : 0,
-          max_drawdown: 0 // Would need more complex calculation
+          'Return': `${totalReturn.toFixed(2)}%`,
+          'AnnualReturn': `${totalReturn.toFixed(2)}%`, // Simplified
+          'DailyVol': `${(volatility / Math.sqrt(252)).toFixed(2)}%`,
+          'AnnualVol': `${volatility.toFixed(2)}%`,
+          'Sharpe': `${sharpeRatio.toFixed(2)}`,
+          'Sortino': "0.00" // Would need more complex calculation
         }
       }
     }

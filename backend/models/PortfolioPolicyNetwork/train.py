@@ -34,10 +34,10 @@ VERBOSE_EVERY = 20
 
 def run(
     prices: pd.DataFrame,
-    lookback: int = BACKLOOK,
-    eval_win: int = EVAL_WINDOW,
-    eta: float = 0.02,           
-    tc: float = TC_RATE,
+    lookback: int,
+    eval_win: int,
+    eta: float,           
+    tc: float,
     device: str = DEVICE,
     write_files: bool = False,
     tag: str | None = None,
@@ -143,8 +143,9 @@ def run(
         w_prev = w_t.copy()
 
     # package outputs
-    nav_dates = dates[lookback - 1 : lookback - 1 + len(nav)]
-    nav_series = pd.Series(nav, index=nav_dates, name="NAV")
+    total_days = len(rlog)
+    nav_dates = dates[lookback - 1 : lookback - 1 + total_days]
+    nav_series = pd.Series(nav[:total_days], index=nav_dates, name="NAV")
 
     metrics = compute_metrics(nav_series)
     final_weights = dict(zip(tickers, map(float, w_prev)))

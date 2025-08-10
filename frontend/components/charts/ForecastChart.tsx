@@ -47,15 +47,10 @@ export default function ForecastChart({
           <XAxis
             dataKey="date"
             interval={tickInterval}
-            tickFormatter={(d) => {
-              const dt = new Date(d)
-              return `${(dt.getMonth() + 1).toString().padStart(2, "0")}/${dt
-                .getDate()
-                .toString()
-                .padStart(2, "0")}`
-            }}
+            tickFormatter={(d) => d.slice(2, 7)} /* Format dates as YY-MM like backtest */
+            minTickGap={40}
             stroke="#7C8BAC"
-            fontSize={10}
+            fontSize={12}
             tick={{ fill: "#7C8BAC" }}
             axisLine={{ stroke: "#7C8BAC" }}
           />

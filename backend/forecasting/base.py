@@ -48,7 +48,7 @@ class ForecastRequest(BaseModel):
         if v > today:
             raise ValueError(f"end date {v} cannot be in the future (today: {today})")
         # Check data availability limits
-        max_reasonable_date = date(2024, 12, 31)
+        max_reasonable_date = date(2025, 12, 31)
         if v > max_reasonable_date:
             raise ValueError(f"end date {v} is beyond reliable stock data availability. Use {max_reasonable_date} or earlier.")
         return v

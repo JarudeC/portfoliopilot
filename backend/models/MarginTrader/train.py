@@ -20,10 +20,10 @@ TOTAL_STEPS_DEF = 20_000
 
 def run(
     prices: pd.DataFrame,
-    lookback: int    = LOOKBACK_DEF,
-    eval_win: int    = EVAL_WIN_DEF,
-    eta: float       = 0.02,     # ignored
-    tc: float        = TC_DEF,
+    lookback: int,
+    eval_win: int,
+    eta: float,     # ignored
+    tc: float,
     total_steps: int = TOTAL_STEPS_DEF,
     seed: int        = 0,
 ) -> Tuple[pd.Series, Dict[str, float], Dict[str, str]]:
@@ -112,7 +112,8 @@ def run(
 
     # ensure we have dates aligned
     if "date" not in account_df.columns:
-        dates = sorted(trade_df["date"].unique())[: len(account_df)]
+        trade_dates = sorted(trade_df["date"].unique())
+        dates = trade_dates[: len(account_df)]
         account_df.insert(0, "date", dates)
     account_df["date"] = pd.to_datetime(account_df["date"])
 

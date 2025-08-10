@@ -30,11 +30,11 @@ ALGO_MAP: Dict[str, str] = {
 class TrainReq(BaseModel):
     algo: Literal[tuple(ALGO_MAP.keys())]  # type: ignore[arg-type]
     tickers: List[str] = Field(..., min_items=1, max_items=8)
-    hist_days: int = 365
-    lookback: int = 252
-    eval_win: int = 5
-    eta: float = 0.02
-    tc: float = 0.002
+    hist_days: int
+    lookback: int
+    eval_win: int
+    eta: float
+    tc: float
 
 
 _train_jobs: Dict[str, Dict[str, Any]] = {}
