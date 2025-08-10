@@ -39,7 +39,7 @@ https://github.com/user-attachments/assets/5321954a-5d97-45d7-9c7b-e68909ab53b1
 
 **Dashboard** - Interactive interface for stock selection and model training initiation.
 
-![Dashboard](https://github.com/user-attachments/assets/02a4133f-aaca-487b-b41b-cccaa347b556)
+![dashboard](https://github.com/user-attachments/assets/2985319e-233c-435c-8f51-cdf9a873e09d)
 
 **Custom AI Strategies**: Leverage Anthropic Claude to generate bespoke investment algorithms based on natural language descriptions
 
@@ -49,7 +49,7 @@ https://github.com/user-attachments/assets/5321954a-5d97-45d7-9c7b-e68909ab53b1
 
 **History** - View past training results and portfolio performance analytics.
 
-![History](https://github.com/user-attachments/assets/48a8fe79-23b5-40fe-961f-a682a6a00d1f)
+![history](https://github.com/user-attachments/assets/d0081d65-f069-469c-b3ff-11e396194c5b)
 
 ## Project Structure
 
@@ -102,11 +102,11 @@ npm run dev
 
 ### Standard Algorithm Usage
 
-https://github.com/user-attachments/assets/a731a76a-0967-4a3c-9bcb-78a20ff75c7e
+https://github.com/user-attachments/assets/6e01c459-9c35-4d1f-9c90-095cf49932a4
 
 ### Custom AI Strategy Generation
 
-https://github.com/user-attachments/assets/87a446d5-4fb9-42b3-aa6b-6221f315a073
+https://github.com/user-attachments/assets/961e9f4f-aa9e-46d5-ab27-2525f24babf0
 
 **Getting Started:**
 1. **Sign In/Login** - Authenticate using OAuth through Supabase
