@@ -108,6 +108,8 @@ https://github.com/user-attachments/assets/6e01c459-9c35-4d1f-9c90-095cf49932a4
 
 https://github.com/user-attachments/assets/961e9f4f-aa9e-46d5-ab27-2525f24babf0
 
+![Anthropic Claude API](https://github.com/user-attachments/assets/9b199f16-6ed8-4f9b-884b-dbd32a35538b)
+
 **Getting Started:**
 1. **Sign In/Login** - Authenticate using OAuth through Supabase
 2. **Dashboard** - Navigate to the main dashboard
