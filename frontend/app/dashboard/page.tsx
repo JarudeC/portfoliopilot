@@ -328,11 +328,11 @@ export default function Dashboard() {
         setProg(90);
         await new Promise(resolve => setTimeout(resolve, 300));
 
-        // Use Claude-generated weights directly
+        // Use Claude-generated weights as initial weights
         const claudeWeights = claudeBacktestStrategy.weights;
         
-        // Convert weights to portfolio format expected by UI
-        const portfolioWeights: Record<string, number> = {};
+        // Initialize portfolio weights - will be updated with final weights after backtest
+        let portfolioWeights: Record<string, number> = {};
         tickers.forEach((ticker, i) => {
           portfolioWeights[ticker] = claudeWeights[i] || 0;
         });
@@ -391,6 +391,7 @@ export default function Dashboard() {
             
             let portfolioValue = 1.0;
             let prevWeights: number[] | null = null;
+            let finalWeights: number[] | null = null; // Track final weights for pie chart
             const portfolioReturns: number[] = [];
             
             // Process in evaluation windows like traditional algorithms
@@ -420,9 +421,12 @@ export default function Dashboard() {
                 
                 const { executeUserCode } = await import('../../lib/claude/client');
                 // Convert lookbackData to StockData format expected by executeUserCode
+                // Include all available data that AI strategies might need
                 const stockData = lookbackData.map(data => ({
                   symbol: data.symbol,
-                  price: data.price
+                  price: data.price,
+                  lookbackPrices: data.lookbackPrices,
+                  lookbackDates: data.lookbackDates
                 }));
                 
                 const result = await executeUserCode(
@@ -442,13 +446,17 @@ export default function Dashboard() {
                 if (result.success && result.weights && Array.isArray(result.weights)) {
                   currentWeights = result.weights;
                   
-                  // Normalize weights to sum to 1
-                  const sum = currentWeights.reduce((s, w) => s + Math.abs(w), 0);
-                  if (sum > 0) {
-                    currentWeights = currentWeights.map(w => w / sum);
-                  } else {
-                    throw new Error('Invalid weights from AI');
+                  // Validate weights are valid numbers but don't force normalization
+                  // Allow the AI strategy to determine its own scaling/normalization
+                  const hasValidWeights = currentWeights.every(w => typeof w === 'number' && isFinite(w));
+                  if (!hasValidWeights) {
+                    throw new Error('AI returned invalid weights (non-numeric or infinite values)');
                   }
+                  
+                  // Optional: log gross exposure for long-short strategies
+                  const grossExposure = currentWeights.reduce((s, w) => s + Math.abs(w), 0);
+                  console.log(`AI weights - Net: ${currentWeights.reduce((a,b) => a+b, 0).toFixed(3)}, Gross: ${grossExposure.toFixed(3)}`);
+                  
                 } else {
                   throw new Error('AI failed to generate weights');
                 }
@@ -494,6 +502,7 @@ export default function Dashboard() {
               }
               
               prevWeights = [...currentWeights];
+              finalWeights = [...currentWeights]; // Capture final weights for pie chart
             }
             
             // Calculate metrics exactly like backend algorithms
@@ -527,6 +536,23 @@ export default function Dashboard() {
               'Sharpe': `${sharpeRatio.toFixed(2)}`,
               'Sortino': `${sortinoRatio.toFixed(2)}`
             };
+            
+            // Update portfolio weights with final weights from last rebalancing period for pie chart
+            if (finalWeights) {
+              // Normalize final weights to percentages for pie chart display
+              const totalWeight = finalWeights.reduce((sum, weight) => sum + Math.abs(weight), 0);
+              if (totalWeight > 0) {
+                tickers.forEach((ticker, i) => {
+                  // Convert to percentage (0-1 scale) for pie chart
+                  portfolioWeights[ticker] = Math.abs(finalWeights![i]) / totalWeight;
+                });
+              } else {
+                // Fallback if all weights are zero
+                tickers.forEach((ticker, i) => {
+                  portfolioWeights[ticker] = 1.0 / tickers.length;
+                });
+              }
+            }
           } else {
             throw new Error('Insufficient historical data');
           }

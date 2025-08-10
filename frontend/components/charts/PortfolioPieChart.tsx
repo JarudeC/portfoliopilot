@@ -30,10 +30,18 @@ export default function PortfolioPieChart({
     )
   }
 
-  const data = Object.entries(weights).map(([name, value]) => ({
-    name,
-    value
-  }))
+  // Process all stock data, give zero-weight stocks tiny values for legend display
+  const data = Object.entries(weights)
+    .map(([name, value]) => ({
+      name,
+      value: Math.abs(value) > 0.000001 ? Math.abs(value) : 0.000001, // Give tiny value to zero stocks for legend
+      isZeroWeight: Math.abs(value) <= 0.000001 // Track which ones are actually zero
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  // Adjust layout based on number of stocks
+  const stockCount = data.length
+  const isMany = stockCount > 5
 
   return (
     <div className="bg-[#0d1b2a]/50 rounded-lg p-4">
@@ -46,21 +54,23 @@ export default function PortfolioPieChart({
             data={data}
             dataKey="value"
             nameKey="name"
-            cx="40%" // leave room on the right for legend
+            cx="50%"
             cy="50%"
             outerRadius={85}
             innerRadius={38}
             stroke="#0d1b2a"
             strokeWidth={2}
-            paddingAngle={2}
+            paddingAngle={1}
           >
-            {data.map((_, i) => {
-              // monochrome-variant palette: cyan → indigo range
-              const hues = [190, 200, 210, 220, 230, 240]
+            {data.map((item, i) => {
+              // Extended color palette for up to 8 stocks
+              const hues = [190, 200, 210, 220, 230, 240, 250, 260]
+              const lightness = stockCount <= 4 ? 55 - i * 3 : 50 - i * 2 // Adjust lightness spacing
               return (
                 <Cell
                   key={i}
-                  fill={`hsl(${hues[i % hues.length]} 70% ${55 - i * 3}%)`}
+                  fill={item.isZeroWeight ? '#8B9DC3' : `hsl(${hues[i % hues.length]} 70% ${lightness}%)`}
+                  stroke="#0d1b2a"
                 />
               )
             })}
@@ -83,6 +93,20 @@ export default function PortfolioPieChart({
               fontSize: "0.75rem",
               lineHeight: "1.25rem",
               color: "#E0E8F9",
+              paddingLeft: "8px",
+              maxWidth: "120px"
+            }}
+            payload={data.map((item, index) => {
+              const hues = [190, 200, 210, 220, 230, 240, 250, 260];
+              const lightness = stockCount <= 4 ? 55 - index * 3 : 50 - index * 2;
+              return {
+                value: item.name,
+                type: 'circle',
+                color: item.isZeroWeight ? '#8B9DC3' : `hsl(${hues[index % hues.length]} 70% ${lightness}%)`
+              };
+            })}
+            formatter={(value: string) => {
+              return value.length > 10 ? value.substring(0, 10) + "..." : value
             }}
           />
         </PieChart>

@@ -659,7 +659,7 @@ export async function generateCodeOnly(
   }
 }
 
-// New function: Execute user code
+// New function: Execute user code locally (no Claude API calls)
 export async function executeUserCode(
   userCode: string,
   mode: 'forecast' | 'backtest',
@@ -675,62 +675,285 @@ export async function executeUserCode(
   }
 ): Promise<GenerationResult> {
   const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const startTime = Date.now();
   
   try {
-    const request: GenerateRequest & { userCode: string } = {
-      userDescription: '', // Not needed for execution
-      stockData: stockData, // Use provided stock data directly
+    // Preserve existing validation for stockData
+    if (!Array.isArray(stockData)) {
+      throw ErrorFactory.createValidationError(
+        'stockData must be an array',
+        'stockData',
+        stockData,
+        requestId
+      );
+    }
+
+    if (stockData.length === 0) {
+      throw ErrorFactory.createValidationError(
+        'stockData array cannot be empty',
+        'stockData',
+        stockData,
+        requestId
+      );
+    }
+
+    if (stockData.length > CLIENT_CONFIG.MAX_STOCK_COUNT) {
+      throw ErrorFactory.createValidationError(
+        `Cannot process more than ${CLIENT_CONFIG.MAX_STOCK_COUNT} stocks`,
+        'stockData',
+        stockData,
+        requestId
+      );
+    }
+
+    // Skip rate limiting for local code execution since no API calls are made
+    // Rate limiting is only needed for actual Claude API calls, not local JavaScript execution
+
+    // Apply security validation to user code (preserve security)
+    const { validateSecurity } = await import('./security');
+    const securityResult = validateSecurity('', userCode, {
+      enablePromptValidation: false, // Skip prompt validation for execution
+      enableCodeValidation: true,   // Always validate code
+      strictMode: securityConfig?.strictMode || false,
+      allowCreativeStrategies: securityConfig?.allowCreativeStrategies !== false,
+      customBlockedPatterns: securityConfig?.customBlockedPatterns,
+      customAllowedPatterns: securityConfig?.customAllowedPatterns
+    });
+
+    if (!securityResult.overallValid || !securityResult.codeValidation?.isValid) {
+      throw ErrorFactory.createValidationError(
+        securityResult.codeValidation?.blockedReason || 'Security validation failed',
+        'userCode',
+        'security_blocked',
+        requestId
+      );
+    }
+
+    // Execute JavaScript locally instead of calling Claude API
+    const executionResult = await executeJavaScriptLocally(
+      userCode, 
+      mode, 
+      stockData, 
+      forecastDays, 
+      dashboardParams,
+      requestId
+    );
+    
+    // Preserve existing request tracking (simulate successful request)
+    const mockPromise = Promise.resolve({ success: true, result: executionResult });
+    requestTracker.registerRequest({
+      userDescription: '',
+      stockData,
       mode,
       securityConfig,
       forecastDays,
-      dashboardParams,
-      userCode
+      dashboardParams
+    } as any, mockPromise as any);
+
+    const executionTime = Date.now() - startTime;
+    
+    return {
+      success: true,
+      type: mode,
+      weights: mode === 'backtest' ? executionResult.weights : undefined,
+      predictions: mode === 'forecast' ? executionResult.predictions : undefined,
+      code: userCode,
+      fallbackUsed: false,
+      executionTime,
+      securityValidation: {
+        promptValid: true,
+        codeValid: true,
+        riskLevel: securityResult.combinedRiskLevel
+      }
     };
 
-    // Check rate limit
-    const rateLimitCheck = requestTracker.checkRateLimit();
-    if (!rateLimitCheck.allowed) {
-      throw new RateLimitError(
-        'Client-side rate limit exceeded. Please wait before making another request.',
-        rateLimitCheck.remaining,
-        rateLimitCheck.resetTime,
-        requestId
-      );
-    }
-
-    // Execute API call with retry logic
-    const apiCallPromise = executeWithRetry(() => makeApiCall(request), CLIENT_CONFIG.MAX_RETRIES, requestId);
-    requestTracker.registerRequest(request, apiCallPromise as any);
-
-    const response = await apiCallPromise;
-
-    // Handle API response
-    if (!response.success) {
-      throw new ClaudeApiError(
-        response.error || 'API request failed',
-        undefined,
-        response,
-        requestId
-      );
-    }
-
-    if (!response.result) {
-      throw new ParseError(
-        'API response missing result data',
-        JSON.stringify(response),
-        requestId
-      );
-    }
-
-    return response.result;
-
   } catch (error: any) {
+    const executionTime = Date.now() - startTime;
+    
+    // Preserve existing error handling
     if (error instanceof ClaudeError) {
       throw error;
     }
     
-    // Handle unexpected errors
-    throw ErrorFactory.createFromFetchError(error, requestId);
+    console.error('Local code execution failed:', error);
+    
+    // Return error result with fallback behavior
+    return {
+      success: false,
+      type: mode,
+      error: error.message || 'Code execution failed',
+      code: userCode,
+      fallbackUsed: true,
+      executionTime,
+      securityValidation: {
+        promptValid: true,
+        codeValid: false,
+        blockedReason: error.message,
+        riskLevel: 'high'
+      }
+    };
+  }
+}
+
+// Local JavaScript execution function
+async function executeJavaScriptLocally(
+  userCode: string,
+  mode: 'forecast' | 'backtest',
+  stockData: StockData[],
+  forecastDays?: number,
+  dashboardParams?: any,
+  requestId?: string
+): Promise<{ weights?: number[], predictions?: Array<{date: string, price: number, confidence?: number}> }> {
+  
+  // Create secure execution environment - only allow safe globals
+  const safeGlobals = {
+    Math: Math,
+    Date: Date,
+    Array: Array,
+    Object: Object,
+    JSON: JSON,
+    Number: Number,
+    String: String,
+    Boolean: Boolean,
+    parseInt: parseInt,
+    parseFloat: parseFloat,
+    isNaN: isNaN,
+    isFinite: isFinite,
+    console: {
+      log: (...args: any[]) => console.log(`[User Code ${requestId}]:`, ...args),
+      warn: (...args: any[]) => console.warn(`[User Code ${requestId}]:`, ...args),
+      error: (...args: any[]) => console.error(`[User Code ${requestId}]:`, ...args)
+    }
+  };
+
+  try {
+    // Convert TypeScript to JavaScript using Babel
+    let jsCode = await transpileTypeScriptToJavaScript(userCode);
+    
+    // Use Function constructor for safer execution than eval
+    const executeCode = new Function(
+      'stockData',
+      'forecastDays', 
+      'dashboardParams',
+      'Math',
+      'Date',
+      'Array',
+      'Object',
+      'JSON',
+      'Number',
+      'String', 
+      'Boolean',
+      'parseInt',
+      'parseFloat',
+      'isNaN',
+      'isFinite',
+      'console',
+      `
+      "use strict";
+      
+      ${jsCode}
+      
+      // Execute the appropriate function based on mode
+      if (typeof calculateWeights === 'function') {
+        const weights = calculateWeights(stockData, dashboardParams || {});
+        if (!Array.isArray(weights)) {
+          throw new Error('calculateWeights must return an array of numbers');
+        }
+        return { weights: weights };
+      } else if (typeof generatePredictions === 'function') {
+        const predictions = generatePredictions(stockData, forecastDays || 30, dashboardParams || {});
+        if (!Array.isArray(predictions)) {
+          throw new Error('generatePredictions must return an array of prediction objects');
+        }
+        return { predictions: predictions };
+      } else {
+        throw new Error('Required function not found: ' + (${mode === 'backtest' ? '"calculateWeights"' : '"generatePredictions"'}));
+      }
+      `
+    );
+
+    // Execute with controlled scope and timeout
+    const executionPromise = new Promise((resolve, reject) => {
+      try {
+        const result = executeCode(
+          stockData,
+          forecastDays,
+          dashboardParams,
+          safeGlobals.Math,
+          safeGlobals.Date,
+          safeGlobals.Array,
+          safeGlobals.Object,
+          safeGlobals.JSON,
+          safeGlobals.Number,
+          safeGlobals.String,
+          safeGlobals.Boolean,
+          safeGlobals.parseInt,
+          safeGlobals.parseFloat,
+          safeGlobals.isNaN,
+          safeGlobals.isFinite,
+          safeGlobals.console
+        );
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
+    });
+
+    // Add timeout to prevent infinite loops
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Code execution timeout (5 seconds)')), 5000)
+    );
+
+    const result = await Promise.race([executionPromise, timeoutPromise]) as any;
+
+    // Validate result structure
+    if (mode === 'backtest' && result.weights) {
+      if (!Array.isArray(result.weights) || result.weights.some((w: any) => typeof w !== 'number' || !isFinite(w))) {
+        throw new Error('calculateWeights must return an array of finite numbers');
+      }
+    } else if (mode === 'forecast' && result.predictions) {
+      if (!Array.isArray(result.predictions) || 
+          result.predictions.some((p: any) => !p || typeof p.price !== 'number' || !p.date)) {
+        throw new Error('generatePredictions must return an array of objects with date and price properties');
+      }
+    }
+
+    return result;
+
+  } catch (error: any) {
+    throw new Error(`JavaScript execution error: ${error.message || 'Unknown error'}`);
+  }
+}
+
+// Browser-compatible TypeScript to JavaScript transpilation using Babel Standalone
+async function transpileTypeScriptToJavaScript(code: string): Promise<string> {
+  try {
+    // Import Babel Standalone (browser-compatible)
+    const Babel = await import('@babel/standalone');
+    
+    // Transpile TypeScript to JavaScript
+    const result = Babel.transform(code, {
+      presets: ['typescript'],
+      filename: 'user-code.ts'
+    });
+    
+    if (!result || !result.code) {
+      throw new Error('Babel transpilation failed - no output code');
+    }
+    
+    console.log('TypeScript transpilation - Original:', code.substring(0, 200) + '...');
+    console.log('TypeScript transpilation - Result:', result.code.substring(0, 200) + '...');
+    
+    return result.code;
+    
+  } catch (error: any) {
+    console.warn('Babel TypeScript transpilation failed:', error);
+    console.log('Falling back to simple regex-based stripping');
+    
+    // Fallback to simple type stripping if Babel fails
+    return code
+      .replace(/:\s*[^=,){\s]+(?=\s*[=,){])/g, '') // Remove : Type annotations
+      .replace(/\):\s*[^{]+\{/g, ') {'); // Remove return types
   }
 }
 
