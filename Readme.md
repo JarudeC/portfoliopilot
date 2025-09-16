@@ -2,6 +2,8 @@
 
 A full-stack web application for portfolio optimization using machine learning, classical algorithms, and custom AI-generated strategies powered by Anthropic Claude.
 
+Youtube Video: https://youtu.be/j-r4ZIsYnZw
+
 ## Tech Stack & Skills Implemented
 
 **Frontend:**
