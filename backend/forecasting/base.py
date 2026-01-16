@@ -1,107 +1,95 @@
-# Base classes and utilities for forecasting models
-# Contains request/response schemas and data loading functions
+"""Abstract base classes and shared utilities for forecasting models.
 
-from __future__ import annotations
+This module provides the foundation for all forecasting implementations,
+ensuring a consistent API and enforcing the Liskov Substitution Principle.
+"""
 
-from datetime import date, datetime
-from typing import List
+from abc import ABC, abstractmethod
+from datetime import date
+from typing import List, Tuple
 
-import pandas as pd
-import yfinance as yf
-from pydantic import BaseModel, Field, validator
+from .data_loader import load_series as _load_series
+from .schemas import ForecastRequest
 
-
-# Request schema for forecasting endpoints
-class ForecastRequest(BaseModel):
-    """Request schema for all forecasting endpoints"""
-
-    ticker: str = Field(
-        ...,
-        examples=["AAPL", "NVDA"],
-        description="Single equity ticker symbol (Yahoo style).",
-    )
-    start: date = Field(
-        ...,
-        description="Inclusive start date for historical window (YYYY-MM-DD).",
-        examples=["2024-01-01"],
-    )
-    end: date = Field(
-        ...,
-        description="Exclusive end date for historical window (YYYY-MM-DD).",
-        examples=["2025-07-23"],
-    )
-    horizon: int = Field(
-        14,
-        gt=0,
-        le=365,
-        description="Number of trading days to predict forward.",
-    )
-
-    # Field validators
-    @validator("ticker")
-    def _upper(cls, v: str) -> str:  # noqa: N805
-        return v.strip().upper()
-
-    @validator("end")
-    def _end_not_future(cls, v: date) -> date:  # noqa: N805
-        today = datetime.utcnow().date()
-        if v > today:
-            raise ValueError(f"end date {v} cannot be in the future (today: {today})")
-        # Check data availability limits
-        max_reasonable_date = date(2025, 12, 31)
-        if v > max_reasonable_date:
-            raise ValueError(f"end date {v} is beyond reliable stock data availability. Use {max_reasonable_date} or earlier.")
-        return v
-
-    @validator("start")
-    def _logical_window(cls, v: date, values) -> date:  # noqa: N805
-        end = values.get("end")
-        if end and v >= end:
-            raise ValueError("start must be earlier than end")
-        return v
+# Type alias for forecast return value
+ForecastResult = Tuple[List[str], List[float], List[str], List[float]]
 
 
-# Data loading utility
-def load_series(ticker: str, start: date, end: date) -> pd.Series:
-    """Download adjusted close prices from Yahoo Finance"""
-    # Debug info
-    print(f"Loading data for {ticker} from {start} to {end}")
-    
-    try:
-        # Match data_loader.py pattern
-        df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)["Close"]
-        print(f"Downloaded data shape: {df.shape}")
-        
-        # Handle MultiIndex columns
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        
-        if df.empty:
-            raise ValueError(f"No price data returned for {ticker!r} between {start} and {end}. Check if ticker exists and dates are valid.")
-        
-        # Handle single/multiple ticker responses
-        if isinstance(df, pd.Series):
-            series = df.rename(ticker).astype("float32")
-        else:
-            # Multiple tickers fallback
-            if ticker in df.columns:
-                series = df[ticker].rename(ticker).astype("float32")
-            else:
-                # Use first column if ticker name doesn't match
-                series = df.iloc[:, 0].rename(ticker).astype("float32")
-        
-        # Clean NaN values
-        series = series.dropna()
-        
-        if len(series) == 0:
-            raise ValueError(f"All price data is NaN for {ticker!r} between {start} and {end}")
-        
-        print(f"Final series length: {len(series)}, date range: {series.index[0]} to {series.index[-1]}")
-        return series
-        
-    except Exception as e:
-        if "No price data" in str(e) or "All price data is NaN" in str(e):
-            raise
-        else:
-            # Wrap network/parsing errors
-            raise ValueError(f"Failed to load data for {ticker!r}: {str(e)}") from e
+class BaseForecaster(ABC):
+    """
+    Abstract base class for all forecasting models.
+
+    All forecasters must implement the `forecast` method which takes
+    a ForecastRequest and returns historical + forecast data in a
+    consistent format.
+
+    This ensures all forecasters are interchangeable (Liskov Substitution Principle)
+    and makes it easy to add new forecasting algorithms.
+    """
+
+    @abstractmethod
+    def forecast(self, req: ForecastRequest) -> ForecastResult:
+        """
+        Generate forecast for the given request.
+
+        Args:
+            req: ForecastRequest with ticker, dates, and horizon
+
+        Returns:
+            Tuple of (hist_dates, hist_values, forecast_dates, forecast_values)
+            where:
+                - hist_dates: List of date strings (YYYY-MM-DD)
+                - hist_values: List of historical prices
+                - forecast_dates: List of forecast date strings
+                - forecast_values: List of predicted prices
+
+        Raises:
+            ValueError: If request data is invalid or insufficient
+            RuntimeError: If model fitting/forecasting fails
+        """
+        pass
+
+    def validate_data_length(
+        self,
+        series_length: int,
+        min_required: int,
+        ticker: str
+    ) -> None:
+        """
+        Validate that we have sufficient data for modeling.
+
+        Args:
+            series_length: Actual data length
+            min_required: Minimum required observations
+            ticker: Ticker symbol for error message
+
+        Raises:
+            ValueError: If insufficient data
+        """
+        if series_length < min_required:
+            raise ValueError(
+                f"Insufficient data for {ticker}: {series_length} observations, "
+                f"need at least {min_required}"
+            )
+
+
+# Backward compatibility: maintain load_series function for existing code
+def load_series(ticker: str, start: date, end: date):
+    """
+    Download adjusted close prices from Yahoo Finance.
+
+    This is a backward-compatible wrapper around the new data_loader module.
+    Existing code can continue using this import path.
+
+    Args:
+        ticker: Yahoo Finance ticker symbol
+        start: Inclusive start date
+        end: Exclusive end date
+
+    Returns:
+        pandas Series with price data
+
+    See Also:
+        forecasting.data_loader.load_series: New consolidated implementation
+    """
+    return _load_series(ticker, start, end, validate=True)

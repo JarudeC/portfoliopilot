@@ -33,19 +33,24 @@ const DEFAULT_CONFIG: SecurityConfig = {
   allowCreativeStrategies: true,
 };
 
-// Very restrictive list - only block obvious security threats
+// Consolidated security patterns
 const PROMPT_INJECTION_PATTERNS = [
   // Direct prompt injection attempts
   /ignore\s+(previous|all\s+previous|the\s+previous|your\s+previous)\s+(instructions?|prompts?|commands?)/i,
   /instead\s+of\s+(following|doing|executing|running)/i,
   /system\s+prompt/i,
   /forget\s+(everything|all\s+previous|your\s+instructions)/i,
-  
-  // AI behavior modification attempts
+];
+
+const BEHAVIOR_MODIFICATION_PATTERNS = [
   /act\s+as\s+(a\s+)?(different|another|new)\s+(ai|assistant|bot)/i,
   /pretend\s+to\s+be\s+(a\s+)?(different|another|hacker|malicious)/i,
   /roleplay\s+as\s+(a\s+)?(hacker|attacker|malicious)/i,
   /you\s+are\s+now\s+(a\s+)?(different|evil|malicious)/i,
+  /act\s+as/i,
+  /pretend\s+to\s+be/i,
+  /roleplay\s+as/i,
+  /you\s+are\s+now/i,
 ];
 
 // Focused on actual security threats in code execution
@@ -86,28 +91,15 @@ const DANGEROUS_CODE_PATTERNS = [
   /spawn\s*\(/i,
 ];
 
-// Allow these patterns even if they might trigger false positives
-const ALLOWED_FINANCIAL_PATTERNS = [
-  /portfolio/i,
-  /strategy/i,
-  /weight/i,
-  /allocation/i,
-  /investment/i,
-  /stock/i,
-  /sector/i,
-  /dividend/i,
-  /growth/i,
-  /value/i,
-  /momentum/i,
-  /technical/i,
-  /fundamental/i,
-  /risk/i,
-  /return/i,
-  /sharpe/i,
-  /volatility/i,
-  /correlation/i,
-  /diversification/i,
+// Consolidated financial keywords (used by multiple functions)
+const FINANCIAL_KEYWORDS = [
+  'portfolio', 'strategy', 'weight', 'allocation', 'investment', 'stock', 'bond', 
+  'sector', 'dividend', 'growth', 'value', 'momentum', 'technical', 'fundamental',
+  'risk', 'return', 'sharpe', 'volatility', 'correlation', 'diversification',
+  'market cap', 'rebalancing', 'asset', 'equity', 'index', 'etf'
 ];
+
+const ALLOWED_FINANCIAL_PATTERNS = FINANCIAL_KEYWORDS.map(keyword => new RegExp(keyword, 'i'));
 
 function validatePrompt(prompt: string, config: SecurityConfig = DEFAULT_CONFIG): PromptValidationResult {
   if (!config.enablePromptValidation) {
@@ -118,15 +110,12 @@ function validatePrompt(prompt: string, config: SecurityConfig = DEFAULT_CONFIG)
     };
   }
 
-  const lowerPrompt = prompt.toLowerCase();
   const blockedPatterns: string[] = [];
   
   // Check for prompt injection attempts
   for (const pattern of PROMPT_INJECTION_PATTERNS) {
     if (pattern.test(prompt)) {
-      const patternStr = pattern.toString();
-      blockedPatterns.push(patternStr);
-      
+      blockedPatterns.push(pattern.toString());
       return {
         isValid: false,
         blockedReason: 'Prompt injection attempt detected',
@@ -139,16 +128,9 @@ function validatePrompt(prompt: string, config: SecurityConfig = DEFAULT_CONFIG)
   }
   
   // Check for AI behavior modification
-  const behaviorModificationPatterns = [
-    /act\s+as/i,
-    /pretend\s+to\s+be/i,
-    /roleplay\s+as/i,
-    /you\s+are\s+now/i,
-  ];
-  
-  for (const pattern of behaviorModificationPatterns) {
+  for (const pattern of BEHAVIOR_MODIFICATION_PATTERNS) {
     if (pattern.test(prompt)) {
-      // But allow if it's clearly about portfolio/investment context
+      // Allow if it's clearly about portfolio/investment context
       const hasFinancialContext = ALLOWED_FINANCIAL_PATTERNS.some(fp => fp.test(prompt));
       if (!hasFinancialContext) {
         return {
@@ -163,28 +145,19 @@ function validatePrompt(prompt: string, config: SecurityConfig = DEFAULT_CONFIG)
     }
   }
   
-  // Check custom blocked patterns if provided
-  if (config.customBlockedPatterns) {
-    for (const customPattern of config.customBlockedPatterns) {
-      const regex = new RegExp(customPattern, 'i');
-      if (regex.test(prompt)) {
-        blockedPatterns.push(customPattern);
-      }
-    }
-    
-    if (blockedPatterns.length > 0) {
-      return {
-        isValid: false,
-        blockedReason: 'Custom security rule triggered',
-        suggestion: 'Your prompt contains patterns that have been specifically blocked. Please rephrase your portfolio strategy description.',
-        riskLevel: 'medium',
-        blockedPatterns,
-        detectedIntent: 'unknown'
-      };
-    }
+  // Check custom patterns using shared validation logic
+  const customValidation = validateCustomPatterns(prompt, config.customBlockedPatterns);
+  if (!customValidation.isValid) {
+    return {
+      isValid: false,
+      blockedReason: 'Custom security rule triggered',
+      suggestion: 'Your prompt contains patterns that have been specifically blocked. Please rephrase your portfolio strategy description.',
+      riskLevel: 'medium',
+      blockedPatterns: customValidation.blockedPatterns,
+      detectedIntent: 'unknown'
+    };
   }
   
-  // All good - allow creative and unconventional strategies
   return {
     isValid: true,
     riskLevel: 'none',
@@ -203,7 +176,6 @@ function validateCode(code: string, config: SecurityConfig = DEFAULT_CONFIG): Co
   }
 
   const dangerousPatterns: string[] = [];
-  const allowedOperations: string[] = [];
   
   // Check for dangerous code patterns
   for (const pattern of DANGEROUS_CODE_PATTERNS) {
@@ -212,53 +184,11 @@ function validateCode(code: string, config: SecurityConfig = DEFAULT_CONFIG): Co
     }
   }
   
-  // Identify allowed operations for transparency
-  const allowedPatterns = [
-    /Math\./g,
-    /Array\.prototype\./g,
-    /\.map\(/g,
-    /\.filter\(/g,
-    /\.reduce\(/g,
-    /\.sort\(/g,
-    /\.find\(/g,
-    /\.forEach\(/g,
-    /if\s*\(/g,
-    /for\s*\(/g,
-    /while\s*\(/g,
-    /return/g,
-    /const\s+/g,
-    /let\s+/g,
-    /var\s+/g,
-  ];
-  
-  for (const pattern of allowedPatterns) {
-    const matches = code.match(pattern);
-    if (matches) {
-      allowedOperations.push(pattern.toString().replace(/[\/\\]/g, ''));
-    }
-  }
+  // Get allowed operations for transparency
+  const allowedOperations = getCodeAllowedOperations(code);
   
   if (dangerousPatterns.length > 0) {
-    let suggestion = 'Your code contains potentially dangerous operations. ';
-    
-    // Provide specific suggestions based on what was blocked
-    if (dangerousPatterns.some(p => p.includes('eval') || p.includes('Function'))) {
-      suggestion += 'Instead of eval() or Function constructor, use direct mathematical operations and conditionals. ';
-    }
-    
-    if (dangerousPatterns.some(p => p.includes('fetch') || p.includes('XMLHttpRequest'))) {
-      suggestion += 'Network requests are not allowed in portfolio calculations. Use the provided stockData parameter instead. ';
-    }
-    
-    if (dangerousPatterns.some(p => p.includes('localStorage') || p.includes('sessionStorage'))) {
-      suggestion += 'Storage access is not allowed. Perform calculations using only the input data. ';
-    }
-    
-    if (dangerousPatterns.some(p => p.includes('document') || p.includes('window'))) {
-      suggestion += 'DOM access is not allowed in portfolio calculations. Focus on pure computational logic. ';
-    }
-    
-    suggestion += 'You can use: Math operations, array methods (.map, .filter, .reduce), conditionals, loops, and variables.';
+    const suggestion = generateCodeSecuritySuggestion(dangerousPatterns);
     
     return {
       isValid: false,
@@ -271,26 +201,18 @@ function validateCode(code: string, config: SecurityConfig = DEFAULT_CONFIG): Co
     };
   }
   
-  // Check custom patterns if provided
-  if (config.customBlockedPatterns) {
-    for (const customPattern of config.customBlockedPatterns) {
-      const regex = new RegExp(customPattern, 'i');
-      if (regex.test(code)) {
-        dangerousPatterns.push(customPattern);
-      }
-    }
-    
-    if (dangerousPatterns.length > 0) {
-      return {
-        isValid: false,
-        blockedReason: 'Custom code security rule triggered',
-        suggestion: 'Your code contains patterns that have been specifically blocked by custom security rules.',
-        riskLevel: 'medium',
-        blockedPatterns: dangerousPatterns,
-        dangerousPatterns,
-        allowedOperations
-      };
-    }
+  // Check custom patterns using shared validation logic
+  const customValidation = validateCustomPatterns(code, config.customBlockedPatterns);
+  if (!customValidation.isValid) {
+    return {
+      isValid: false,
+      blockedReason: 'Custom code security rule triggered',
+      suggestion: 'Your code contains patterns that have been specifically blocked by custom security rules.',
+      riskLevel: 'medium',
+      blockedPatterns: customValidation.blockedPatterns,
+      dangerousPatterns: customValidation.blockedPatterns,
+      allowedOperations
+    };
   }
   
   return {
@@ -339,19 +261,75 @@ export function createSecurityConfig(overrides: Partial<SecurityConfig>): Securi
   return { ...DEFAULT_CONFIG, ...overrides };
 }
 
+// Shared validation logic for custom patterns
+function validateCustomPatterns(input: string, customPatterns?: string[]): { isValid: boolean; blockedPatterns: string[] } {
+  if (!customPatterns || customPatterns.length === 0) {
+    return { isValid: true, blockedPatterns: [] };
+  }
+
+  const blockedPatterns: string[] = [];
+  
+  for (const customPattern of customPatterns) {
+    const regex = new RegExp(customPattern, 'i');
+    if (regex.test(input)) {
+      blockedPatterns.push(customPattern);
+    }
+  }
+  
+  return {
+    isValid: blockedPatterns.length === 0,
+    blockedPatterns
+  };
+}
+
+// Helper to get allowed code operations
+function getCodeAllowedOperations(code: string): string[] {
+  const allowedPatterns = [
+    /Math\./g, /Array\.prototype\./g, /\.map\(/g, /\.filter\(/g, /\.reduce\(/g,
+    /\.sort\(/g, /\.find\(/g, /\.forEach\(/g, /if\s*\(/g, /for\s*\(/g,
+    /while\s*\(/g, /return/g, /const\s+/g, /let\s+/g, /var\s+/g
+  ];
+  
+  const allowedOperations: string[] = [];
+  for (const pattern of allowedPatterns) {
+    const matches = code.match(pattern);
+    if (matches) {
+      allowedOperations.push(pattern.toString().replace(/[\/\\]/g, ''));
+    }
+  }
+  
+  return allowedOperations;
+}
+
+// Helper to generate code security suggestions
+function generateCodeSecuritySuggestion(dangerousPatterns: string[]): string {
+  let suggestion = 'Your code contains potentially dangerous operations. ';
+  
+  if (dangerousPatterns.some(p => p.includes('eval') || p.includes('Function'))) {
+    suggestion += 'Instead of eval() or Function constructor, use direct mathematical operations and conditionals. ';
+  }
+  
+  if (dangerousPatterns.some(p => p.includes('fetch') || p.includes('XMLHttpRequest'))) {
+    suggestion += 'Network requests are not allowed in portfolio calculations. Use the provided stockData parameter instead. ';
+  }
+  
+  if (dangerousPatterns.some(p => p.includes('localStorage') || p.includes('sessionStorage'))) {
+    suggestion += 'Storage access is not allowed. Perform calculations using only the input data. ';
+  }
+  
+  if (dangerousPatterns.some(p => p.includes('document') || p.includes('window'))) {
+    suggestion += 'DOM access is not allowed in portfolio calculations. Focus on pure computational logic. ';
+  }
+  
+  suggestion += 'You can use: Math operations, array methods (.map, .filter, .reduce), conditionals, loops, and variables.';
+  return suggestion;
+}
+
 // Helper function to check if a prompt is likely a legitimate portfolio strategy
 export function isLikelyPortfolioStrategy(prompt: string): boolean {
   const prompt_lower = prompt.toLowerCase();
   
-  // Check for financial/investment keywords
-  const financialKeywords = [
-    'portfolio', 'strategy', 'investment', 'stock', 'bond', 'allocation',
-    'weight', 'diversification', 'risk', 'return', 'dividend', 'growth',
-    'value', 'momentum', 'sector', 'market cap', 'volatility', 'sharpe',
-    'correlation', 'rebalancing', 'asset', 'equity', 'index', 'etf'
-  ];
-  
-  const keywordCount = financialKeywords.filter(keyword => 
+  const keywordCount = FINANCIAL_KEYWORDS.filter(keyword => 
     prompt_lower.includes(keyword)
   ).length;
   

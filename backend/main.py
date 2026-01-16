@@ -11,12 +11,61 @@ import numpy as np
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from utils.data_loader import load_prices
+from utils.data_loader import load_prices, load_series
 
 # Forecasting model imports
-from forecasting import arima, autoformer, base, lstm
+from forecasting import arima, autoformer, lstm
+from forecasting.schemas import ForecastRequest
+
 
 app = FastAPI()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Historical Price Data Endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PriceRequest(BaseModel):
+    """Request schema for historical price data."""
+    ticker: str = Field(..., description="Stock ticker symbol (e.g., AAPL)")
+    start: str = Field(..., description="Start date (YYYY-MM-DD)")
+    end: str = Field(..., description="End date (YYYY-MM-DD)")
+
+
+@app.post("/prices")
+def get_prices(req: PriceRequest):
+    """
+    Fetch historical stock prices from Yahoo Finance.
+
+    This is a dedicated endpoint for fetching raw price data without
+    running any forecasting models. Use this when you only need historical
+    data (e.g., for Custom AI Strategy, data visualization, etc.)
+
+    Returns:
+        ticker: The requested ticker symbol
+        dates: List of date strings (YYYY-MM-DD)
+        prices: List of adjusted close prices
+    """
+    from datetime import datetime
+
+    try:
+        start_date = datetime.strptime(req.start, "%Y-%m-%d").date()
+        end_date = datetime.strptime(req.end, "%Y-%m-%d").date()
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid date format. Use YYYY-MM-DD. Error: {str(e)}")
+
+    try:
+        series = load_series(req.ticker, start_date, end_date)
+
+        return {
+            "ticker": req.ticker,
+            "dates": series.index.strftime("%Y-%m-%d").tolist(),
+            "prices": series.tolist()
+        }
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Failed to fetch prices: {str(e)}")
 
 # Portfolio algorithm mapping
 ALGO_MAP: Dict[str, str] = {
@@ -85,13 +134,13 @@ def train_status(jid: str):
 # Price forecasting endpoints
 
 # Forecasting algorithm mappings
-_SYNC_FORECASTERS: Dict[str, Callable[[base.ForecastRequest], Tuple[List[str], List[float], List[str], List[float]]]] = {
+_SYNC_FORECASTERS: Dict[str, Callable[[ForecastRequest], Tuple[List[str], List[float], List[str], List[float]]]] = {
     "arima": arima.forecast,
     "lstm": lstm.forecast,
     "autoformer": autoformer.forecast,
 }
 
-_ASYNC_FORECASTERS: Dict[str, Callable[[base.ForecastRequest], Tuple[List[str], List[float], List[str], List[float]]]] = {
+_ASYNC_FORECASTERS: Dict[str, Callable[[ForecastRequest], Tuple[List[str], List[float], List[str], List[float]]]] = {
 }
 
 
@@ -108,7 +157,7 @@ def _payload(hd: List[str], hv: List[float], fd: List[str], fv: List[float]) -> 
 
 
 @app.post("/forecast/{algo}")
-def forecast(algo: Literal["arima", "lstm", "autoformer"], req: base.ForecastRequest, bg: BackgroundTasks):
+def forecast(algo: Literal["arima", "lstm", "autoformer"], req: ForecastRequest, bg: BackgroundTasks):
     """Route dispatcher - runs fast models synchronously, heavy models asynchronously"""
 
     if algo in _SYNC_FORECASTERS:
@@ -128,7 +177,7 @@ def forecast(algo: Literal["arima", "lstm", "autoformer"], req: base.ForecastReq
     raise HTTPException(400, "Unknown forecasting algorithm")
 
 
-def _async_wrapper(algo_key: str, req: base.ForecastRequest, tid: str) -> None:
+def _async_wrapper(algo_key: str, req: ForecastRequest, tid: str) -> None:
     try:
         hd, hv, fd, fv = _ASYNC_FORECASTERS[algo_key](req)
         _forecast_jobs[tid] = {"status": "done", "algo": algo_key, **_payload(hd, hv, fd, fv)}

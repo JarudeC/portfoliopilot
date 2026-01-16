@@ -351,30 +351,30 @@ export default function Dashboard() {
           const calendarDaysBack = Math.round(btHistDays * tradingDayMultiplier);
           const start = new Date(today.getTime() - calendarDaysBack * 86_400_000).toISOString().slice(0, 10);
           
-          // Fetch historical data for all tickers (same as forecast logic)
+          // Fetch historical data for all tickers using dedicated prices endpoint
           const tickerDataPromises = tickers.map(async (ticker, index) => {
-            const res = await fetch(`/api/forecast/arima`, {
+            const res = await fetch(`/api/prices`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ ticker, start, end, horizon: 1 }),
+              body: JSON.stringify({ ticker, start, end }),
             });
-            
+
             if (!res.ok) {
               throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             }
-            
+
             const payload = await res.json();
-            
-            // Check same structure as forecast logic
-            if (!payload.history_dates || !payload.history_values) {
+
+            // Check response structure
+            if (!payload.dates || !payload.prices) {
               throw new Error(`Invalid response structure for ${ticker}`);
             }
-            
+
             return {
               ticker,
               weight: claudeWeights[index] || 0,
-              dates: payload.history_dates,
-              prices: payload.history_values
+              dates: payload.dates,
+              prices: payload.prices
             };
           });
           
@@ -713,39 +713,34 @@ export default function Dashboard() {
               await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
             }
             
-            // Get REAL YFinance historical data first (for context)
-            const res = await fetch(`/api/forecast/arima`, {
+            // Get historical data from dedicated prices endpoint (no forecasting overhead)
+            const res = await fetch(`/api/prices`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ 
-                ticker, 
-                start, 
-                end, 
-                horizon: 1 // We just need historical data, minimal forecast
-              }),
+              body: JSON.stringify({ ticker, start, end }),
             });
-    
+
             if (!res.ok) {
               throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             }
-    
+
             const payload = await res.json();
-            
+
             // Check if we got the expected data structure
-            if (!payload.history_dates || !payload.history_values) {
+            if (!payload.dates || !payload.prices) {
               throw new Error(`Invalid response structure for ${ticker}`);
             }
-            
+
             // Prepare historical data for display
-            const historySeries = payload.history_dates.map((date: string, index: number) => ({
+            const historySeries = payload.dates.map((date: string, index: number) => ({
               date,
-              price: payload.history_values[index]
+              price: payload.prices[index]
             }));
-            
+
             // Apply Claude's pre-generated predictions to this ticker's historical data
             let forecastSeries = [];
             if (claudePredictions && Array.isArray(claudePredictions)) {
-              const lastPrice = payload.history_values[payload.history_values.length - 1] || 100;
+              const lastPrice = payload.prices[payload.prices.length - 1] || 100;
               
               // Determine if predictions are absolute prices or relative multipliers
               const firstPred = claudePredictions[0];
@@ -758,7 +753,7 @@ export default function Dashboard() {
             } else {
               console.warn(`No Claude predictions available for ${ticker}, using fallback`);
               // Fallback: simple trend continuation
-              const lastPrice = payload.history_values[payload.history_values.length - 1] || 100;
+              const lastPrice = payload.prices[payload.prices.length - 1] || 100;
               const startDate = new Date(end);
               for (let j = 1; j <= forecastDays; j++) {
                 const futureDate = new Date(startDate);

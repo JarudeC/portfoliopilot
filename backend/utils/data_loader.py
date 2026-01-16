@@ -1,13 +1,9 @@
-# Data loading utility for historical price data
-import yfinance as yf
-import pandas as pd
+"""Data loading utility for historical price data.
 
-def load_prices(tickers: list[str], days: int) -> pd.DataFrame:
-    """Load historical price data for given tickers and time period"""
-    df = yf.download(" ".join(tickers),
-                     period=f"{days}d",
-                     interval="1d",
-                     auto_adjust=True)["Close"]
-    if isinstance(df.columns, pd.MultiIndex):  # Flatten MultiIndex columns
-        df.columns = df.columns.get_level_values(0)
-    return df.dropna()
+This module re-exports functions from forecasting.data_loader to maintain
+backward compatibility with existing code while consolidating implementation.
+"""
+
+from forecasting.data_loader import load_prices, load_series
+
+__all__ = ['load_prices', 'load_series']
