@@ -20,10 +20,7 @@ from forecasting.schemas import ForecastRequest
 
 app = FastAPI()
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Historical Price Data Endpoints
-# ─────────────────────────────────────────────────────────────────────────────
 
 class PriceRequest(BaseModel):
     """Request schema for historical price data."""
@@ -69,10 +66,10 @@ def get_prices(req: PriceRequest):
 
 # Portfolio algorithm mapping
 ALGO_MAP: Dict[str, str] = {
-    "Naive Markowitz": "models.NaiveMarkowitz.api",
-    "GVMP": "models.GMVP_Clustering.api",
-    "PPN": "models.PortfolioPolicyNetwork.api",
-    "Margin Trader": "models.MarginTrader.api",
+    "Naive Markowitz": "backtesting.naive_markowitz.api",
+    "GVMP": "backtesting.gmvp_clustering.api",
+    "PPN": "backtesting.policy_network.api",
+    "Margin Trader": "backtesting.margin_trader.api",
 }
 
 

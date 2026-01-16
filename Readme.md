@@ -57,18 +57,16 @@ https://github.com/user-attachments/assets/5321954a-5d97-45d7-9c7b-e68909ab53b1
 
 ```
 .
-├─ frontend/             ← Next.js web application
-│   ├─ app/             ← App router pages and API routes
-│   ├─ components/      ← Reusable React components
-│   ├─ contexts/        ← React context providers
-│   └─ lib/             ← Utility functions and configs
-├─ backend/             ← FastAPI server
-│   ├─ models/          ← ML portfolio optimization models
-│   ├─ forecasting/     ← Time series forecasting models
-│   ├─ utils/           ← Helper functions and data processing
-│   ├─ main.py          ← FastAPI application entry point
-│   └─ requirements.txt ← Python dependencies
-└─ README.md           ← This file
+├─ frontend/          ← Next.js web application
+│   ├─ app/           ← App router pages and API routes
+│   ├─ components/    ← Reusable React components
+│   ├─ contexts/      ← React context providers
+│   └─ lib/           ← Utility functions and configs
+├─ backend/           ← FastAPI server
+│   ├─ backtesting/   ← Portfolio optimization strategies
+│   ├─ forecasting/   ← Time series forecasting models
+│   └─ utils/         ← Helper functions
+└─ README.md
 ```
 
 ## Setup & Installation
