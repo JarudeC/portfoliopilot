@@ -2,6 +2,8 @@
 
 A full-stack web application for portfolio optimization using machine learning, classical algorithms, and custom AI-generated strategies powered by Anthropic Claude.
 
+Youtube Video: https://youtu.be/j-r4ZIsYnZw
+
 ## Tech Stack & Skills Implemented
 
 **Frontend:**
@@ -125,7 +127,6 @@ https://github.com/user-attachments/assets/961e9f4f-aa9e-46d5-ab27-2525f24babf0
 ### Portfolio Optimization Models
 - **Naive Markowitz** - Mean-variance optimization with risk-aversion parameter
 - **GMVP (Global Minimum Variance Portfolio)** - Minimizes portfolio variance
-- **GMVP with Clustering** - Cost-aware GMVP with stock clustering for stability
 - **MarginTrader** - Reinforcement learning agent using A2C algorithm
 - **Portfolio Policy Network** - Deep learning approach for portfolio allocation
 
