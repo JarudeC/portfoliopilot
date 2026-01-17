@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { generatePortfolioWeights, generateCodeOnly, executeUserCode, StockData, GenerationResult } from '../../../../lib/claude/generator';
-import { validateSecurity, createSecurityConfig, SecurityConfig } from '../../../../lib/claude/security';
-import { 
-  ClaudeError, 
-  ClaudeApiError, 
-  NetworkError, 
-  ValidationError, 
-  TimeoutError, 
-  RateLimitError, 
-  SecurityError,
+import {
+  generatePortfolioWeights,
+  generateCodeOnlyServer as generateCodeOnly,
+  executeUserCodeServer as executeUserCode,
+  validateSecurity,
+  createSecurityConfig,
+  ClaudeError,
+  ClaudeApiError,
+  TimeoutError,
+  RateLimitError,
   ErrorFactory,
-  ErrorUtils
-} from '../../../../lib/claude/errors';
+} from '../../../../lib/claude';
+import type { StockData, GenerationResult, SecurityConfig } from '../../../../lib/claude';
 
 // Request/Response Type Interfaces
 interface GenerateRequest {
@@ -375,8 +375,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               mode,
               claudeApiCall,
               secConfig,
-              forecastDays || 30,
-              dashboardParams
+              forecastDays || 30
             );
           } else {
             // Original flow: generate and execute

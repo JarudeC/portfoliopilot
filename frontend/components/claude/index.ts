@@ -1,10 +1,14 @@
-// Export all Claude-related components and types
-export { default as ClaudeStrategy } from './ClaudeStrategy';
+// Claude AI strategy generation components
 export { default as ClaudePopup } from './ClaudePopup';
-export type { 
-  StockData, 
-  GenerationResult, 
+
+// Re-export types for convenience
+export type {
+  StockData,
+  GenerationResult,
   SecurityConfig,
+} from '../../lib/claude';
+
+export {
   ClientErrorType,
-  ClaudeClientError 
-} from '../../lib/claude/client';
+  ClaudeClientError
+} from '../../lib/claude';

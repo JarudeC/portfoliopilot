@@ -57,8 +57,8 @@ export function ToastProvider({ children, maxToasts = 5 }: ToastProviderProps) {
     const id = generateId();
     const newToast: Toast = {
       id,
-      duration: 5000, // Default 5 seconds
-      ...toast
+      ...toast,
+      duration: toast.duration ?? 5000, // Default 5 seconds if not specified
     };
 
     setToasts(prev => {
@@ -69,7 +69,8 @@ export function ToastProvider({ children, maxToasts = 5 }: ToastProviderProps) {
     // Auto-dismiss if not persistent
     if (!newToast.persistent && newToast.duration && newToast.duration > 0) {
       setTimeout(() => {
-        dismissToast(id);
+        // Use setToasts directly to avoid stale closure
+        setToasts(prev => prev.filter(t => t.id !== id));
       }, newToast.duration);
     }
   };

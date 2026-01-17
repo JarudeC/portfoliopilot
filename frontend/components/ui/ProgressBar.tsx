@@ -1,3 +1,6 @@
+/**
+ * Animated progress bar with optional percentage display.
+ */
 'use client'
 
 interface ProgressBarProps {

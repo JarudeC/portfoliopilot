@@ -1,3 +1,6 @@
+/**
+ * Labeled filter wrapper component for form controls.
+ */
 'use client'
 
 interface FilterProps {

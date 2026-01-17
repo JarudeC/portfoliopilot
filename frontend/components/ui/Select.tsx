@@ -1,3 +1,6 @@
+/**
+ * Styled select dropdown with dark theme.
+ */
 'use client'
 
 interface SelectProps {

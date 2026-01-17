@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { generateStrategy, generateCodeOnly, executeUserCode, ClaudeClientError, ClientErrorType, type GenerationResult, type StockData } from "../../lib/claude/client";
+import { generateStrategy, generateCodeOnly, executeUserCode, ClaudeClientError, ClientErrorType, type GenerationResult, type StockData } from "../../lib/claude";
 import CodeEditor from './CodeEditor';
 
 // Popup component props
@@ -165,12 +165,11 @@ Press Ctrl+Enter to generate, Esc to close`;
 
       // Call the new generateCodeOnly function to get code without execution
       const result = await generateCodeOnly(
-        userDescription.trim(), 
-        mode, 
+        userDescription.trim(),
+        mode,
         stockData, // Use actual user-selected stocks
-        undefined, // securityConfig 
-        mode === 'forecast' ? dashboardParams.forecastDays : undefined,
-        dashboardParams
+        undefined, // securityConfig
+        mode === 'forecast' ? dashboardParams.forecastDays : undefined
       );
       
       if (result.success && result.code) {

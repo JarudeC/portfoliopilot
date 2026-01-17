@@ -1,3 +1,7 @@
+/**
+ * Stock price forecast visualization chart.
+ * Displays historical prices and forecasted prices with a reference line at the split point.
+ */
 'use client'
 
 import {

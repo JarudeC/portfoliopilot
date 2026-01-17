@@ -1,3 +1,7 @@
+/**
+ * Performance metrics display table.
+ * Renders backtest/forecast metrics (Return, Sharpe, Sortino, MSE, MAE, etc.) in a formatted table.
+ */
 'use client'
 
 interface MetricsTableProps {

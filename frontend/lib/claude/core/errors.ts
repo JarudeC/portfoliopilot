@@ -1,4 +1,9 @@
-// Enhanced error handling system for Claude integration
+/**
+ * Enhanced error handling system for Claude integration.
+ * Provides typed errors with severity, retry logic, and user-friendly messages.
+ */
+
+import { API_REQUEST_TIMEOUT } from './constants';
 
 // Error severity levels
 export enum ErrorSeverity {
@@ -26,7 +31,7 @@ export enum ErrorCategory {
 export abstract class ClaudeError extends Error {
   public readonly timestamp: number;
   public readonly requestId?: string;
-  
+
   constructor(
     message: string,
     public readonly code: string,
@@ -41,7 +46,7 @@ export abstract class ClaudeError extends Error {
     this.name = this.constructor.name;
     this.timestamp = Date.now();
     this.requestId = requestId;
-    
+
     // Ensure proper prototype chain for instanceof checks
     Object.setPrototypeOf(this, new.target.prototype);
   }
@@ -88,7 +93,7 @@ export class ClaudeApiError extends ClaudeError {
     const code = `API_ERROR_${statusCode || 'UNKNOWN'}`;
     const severity = statusCode && statusCode >= 500 ? ErrorSeverity.HIGH : ErrorSeverity.MEDIUM;
     const retryable = statusCode ? [429, 500, 502, 503, 504].includes(statusCode) : false;
-    
+
     let userMessage: string;
     let suggestions: string[];
 
@@ -224,7 +229,7 @@ export class RateLimitError extends ClaudeError {
     requestId?: string
   ) {
     const waitMinutes = Math.ceil((resetTime - Date.now()) / 60000);
-    
+
     super(
       message,
       'RATE_LIMIT_ERROR',
@@ -300,7 +305,7 @@ export class ErrorFactory {
   ): ClaudeError {
     const { status, statusText } = response;
     const message = responseBody?.error || statusText || 'API request failed';
-    
+
     return new ClaudeApiError(message, status, responseBody, requestId);
   }
 
@@ -311,11 +316,11 @@ export class ErrorFactory {
     if (error.name === 'AbortError' || error.code === 'TIMEOUT') {
       return new TimeoutError(
         error.message || 'Request timed out',
-        30000,
+        API_REQUEST_TIMEOUT,
         requestId
       );
     }
-    
+
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
       return new NetworkError(
         'Network request failed',
@@ -323,7 +328,7 @@ export class ErrorFactory {
         requestId
       );
     }
-    
+
     return new NetworkError(
       error.message || 'Unknown error occurred',
       error,
@@ -377,7 +382,7 @@ export class ErrorAggregator {
 
   getHighestSeverity(): ErrorSeverity {
     if (this.errors.length === 0) return ErrorSeverity.LOW;
-    
+
     const severityOrder = [ErrorSeverity.LOW, ErrorSeverity.MEDIUM, ErrorSeverity.HIGH, ErrorSeverity.CRITICAL];
     return this.errors.reduce((highest: ErrorSeverity, error: ClaudeError) => {
       const currentIndex = severityOrder.indexOf(error.severity);
@@ -388,7 +393,7 @@ export class ErrorAggregator {
 
   getMostCriticalError(): ClaudeError | null {
     if (this.errors.length === 0) return null;
-    
+
     const severityOrder = [ErrorSeverity.LOW, ErrorSeverity.MEDIUM, ErrorSeverity.HIGH, ErrorSeverity.CRITICAL];
     return this.errors.reduce((mostCritical, error) => {
       const currentIndex = severityOrder.indexOf(error.severity);
@@ -412,7 +417,7 @@ export class ErrorUtils {
     // Exponential backoff with jitter
     const delay = baseDelay * Math.pow(2, attempt - 1);
     const jitter = Math.random() * 0.1 * delay;
-    return Math.min(delay + jitter, 30000); // Max 30 seconds
+    return Math.min(delay + jitter, API_REQUEST_TIMEOUT); // Max equals API timeout
   }
 
   static shouldShowToUser(error: any): boolean {

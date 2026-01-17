@@ -1,3 +1,7 @@
+/**
+ * Portfolio equity curve chart.
+ * Displays portfolio value over time as a line chart for backtest results.
+ */
 'use client'
 
 import {

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Component, ReactNode } from 'react';
-import { ErrorFactory, ClaudeError, ErrorUtils } from '../../lib/claude/errors';
+import { ErrorFactory, ClaudeError, ErrorUtils } from '../../lib/claude';
 
 interface ErrorBoundaryProps {
   children: ReactNode;

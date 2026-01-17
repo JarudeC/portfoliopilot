@@ -1,3 +1,8 @@
+/**
+ * Portfolio allocation pie chart.
+ * Displays stock weights as a donut chart with dynamic color generation.
+ * Handles zero-weight stocks by displaying them in legend with neutral color.
+ */
 'use client'
 
 import {
@@ -96,15 +101,18 @@ export default function PortfolioPieChart({
               paddingLeft: "8px",
               maxWidth: "120px"
             }}
-            payload={data.map((item, index) => {
-              const hues = [190, 200, 210, 220, 230, 240, 250, 260];
-              const lightness = stockCount <= 4 ? 55 - index * 3 : 50 - index * 2;
-              return {
-                value: item.name,
-                type: 'circle',
-                color: item.isZeroWeight ? '#8B9DC3' : `hsl(${hues[index % hues.length]} 70% ${lightness}%)`
-              };
-            })}
+            // Custom payload for color-matched legend entries
+            {...{
+              payload: data.map((item, index) => {
+                const hues = [190, 200, 210, 220, 230, 240, 250, 260];
+                const lightness = stockCount <= 4 ? 55 - index * 3 : 50 - index * 2;
+                return {
+                  value: item.name,
+                  type: 'circle' as const,
+                  color: item.isZeroWeight ? '#8B9DC3' : `hsl(${hues[index % hues.length]} 70% ${lightness}%)`
+                };
+              })
+            }}
             formatter={(value: string) => {
               return value.length > 10 ? value.substring(0, 10) + "..." : value
             }}
