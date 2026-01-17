@@ -7,12 +7,8 @@ matplotlib>=3.8
 tqdm>=4.66
 python-dotenv>=1.0
 
-# Jupyter / interactive work
-jupyter>=1.0
-ipykernel>=6.29
-
 # Reinforcement learning stack (A2C, PPO, etc.)
-stable-baselines3[extra]>=2.2.1
+stable-baselines3>=2.2.1
 cloudpickle>=3.0
 
 # Portfolio optimization helpers
@@ -31,9 +27,7 @@ uvicorn[standard]>=0.30
 # Forecasting stack (ARIMA / LSTM / Autoformer)
 statsmodels>=0.14.5           # NumPy-2-compatible ARIMA
 einops>=0.7                   # needed by transformer implementations
-# PyTorch itself is installed separately to match your CUDA/CPU build
-# Note: Autoformer requires manual implementation or external package
 
-# PyTorch (CPU version for Railway deployment)
+# PyTorch (CPU version for production deployment)
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.0
-torchvision>=0.15
