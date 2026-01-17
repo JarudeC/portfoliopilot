@@ -34,6 +34,6 @@ einops>=0.7                   # needed by transformer implementations
 # PyTorch itself is installed separately to match your CUDA/CPU build
 # Note: Autoformer requires manual implementation or external package
 
-# NOTE on PyTorch:
-# pip/conda install torch==<version> outside this file so you can
-# choose the correct CPU-only or CUDA wheel for each machine.
+# PyTorch (CPU version for Railway deployment)
+torch>=2.0
+torchvision>=0.15

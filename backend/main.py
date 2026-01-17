@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+import os
 from importlib import import_module
 from typing import Any, Dict, List, Literal, Callable, Tuple
 from uuid import uuid4
 
 import numpy as np
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from utils.data_loader import load_prices, load_series
@@ -19,6 +21,27 @@ from forecasting.schemas import ForecastRequest
 
 
 app = FastAPI()
+
+# CORS middleware for production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://portfoliopilot-research.com",
+        "https://www.portfoliopilot-research.com",
+        "http://localhost:3000",  # Local development
+        "http://localhost:3001",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Health check endpoint for Railway
+@app.get("/health")
+def health():
+    """Health check endpoint for deployment monitoring."""
+    return {"status": "ok"}
 
 # Historical Price Data Endpoints
 
