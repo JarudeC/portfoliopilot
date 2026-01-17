@@ -4,14 +4,15 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   async rewrites() {
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
     return [
       {
         source: '/api/forecast/:path*',
-        destination: 'http://localhost:8000/forecast/:path*', // FastAPI
+        destination: `${backendUrl}/forecast/:path*`, // FastAPI
       },
       {
         source: "/proxy/:path*",                // browser calls /proxy/…
-        destination: "http://localhost:8000/:path*", // hits FastAPI /… 
+        destination: `${backendUrl}/:path*`, // hits FastAPI /…
       },
     ];
   },
