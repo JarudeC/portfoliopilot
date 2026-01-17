@@ -46,13 +46,15 @@ def load_series(
     """
     logger.info(f"Loading data for {ticker} from {start} to {end}")
 
+    # Normalize ticker to uppercase for consistency
+    ticker = ticker.upper().strip()
+
     try:
-        # Download data using yfinance
-        df = yf.download(
-            ticker,
+        # Create a fresh Ticker object to avoid caching issues
+        yf_ticker = yf.Ticker(ticker)
+        df = yf_ticker.history(
             start=start,
             end=end,
-            progress=False,
             auto_adjust=True
         )
 
@@ -70,33 +72,13 @@ def load_series(
             return pd.Series(dtype='float32')
 
         # Extract Close prices from the DataFrame
-        # Handle both single-level and MultiIndex columns
+        # Ticker.history() returns DataFrame with standard columns: Open, High, Low, Close, Volume
         if "Close" in df.columns:
-            df = df["Close"]
-        elif isinstance(df.columns, pd.MultiIndex) and "Close" in df.columns.get_level_values(0):
-            df = df["Close"]
+            series = df["Close"].rename(ticker).astype('float32')
         else:
-            # If no Close column, assume the data is already price data
-            logger.debug(f"No 'Close' column found, using raw data")
-
-        # Handle MultiIndex columns after selecting Close (can happen with multiple tickers)
-        if isinstance(df, pd.DataFrame) and isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        # Handle Series vs DataFrame response
-        if isinstance(df, pd.Series):
-            series = df.rename(ticker).astype('float32')
-        else:
-            # DataFrame - select the requested ticker
-            if ticker in df.columns:
-                series = df[ticker].rename(ticker).astype('float32')
-            else:
-                # Use first column if ticker name doesn't match
-                logger.debug(
-                    f"Ticker {ticker} not in columns {list(df.columns)}, "
-                    f"using first column"
-                )
-                series = df.iloc[:, 0].rename(ticker).astype('float32')
+            # Fallback: use first column if no Close column found
+            logger.warning(f"No 'Close' column found for {ticker}, columns: {list(df.columns)}")
+            series = df.iloc[:, 0].rename(ticker).astype('float32')
 
         # Clean NaN values
         series = series.dropna()

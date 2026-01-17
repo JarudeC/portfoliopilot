@@ -65,11 +65,13 @@ You are a TypeScript code generator. You MUST respond with ONLY a valid TypeScri
 7. Return ONLY the function code
 
 IMPORTANT - stockData structure for DYNAMIC REBALANCING:
-Each stock object contains: {symbol: string, price: number, lookbackPrices?: number[], lookbackDates?: string[], marketCap?: number, volume?: number}
+Each stock object contains: {symbol: string, price: number, lookbackPrices: number[], lookbackDates: string[]}
+- symbol: the stock ticker (e.g., "AAPL")
 - price: current price at rebalancing time
-- lookbackPrices: array of historical prices for the lookback period
-- lookbackDates: corresponding dates for lookbackPrices
-- You can analyze trends, volatility, momentum using lookbackPrices/lookbackDates
+- lookbackPrices: array of historical prices for the lookback period (ALWAYS available, use this for calculations)
+- lookbackDates: corresponding dates for lookbackPrices (ALWAYS available)
+- Use lookbackPrices to calculate: returns, volatility, momentum, moving averages, trends
+- Example: daily returns = (lookbackPrices[i] - lookbackPrices[i-1]) / lookbackPrices[i-1]
 
 The dashboardParams object contains:
 - backtestDays: total historical days for backtesting
@@ -113,8 +115,10 @@ You are a TypeScript code generator. You MUST respond with ONLY a valid TypeScri
 7. Return ONLY the function code
 
 IMPORTANT - stockData structure:
-Each stock is an object with CURRENT data only: {symbol: string, price: number, marketCap?: number, volume?: number}
-You do NOT have historical price data or dates. Only current price, marketCap, and volume.
+Each stock is an object with: {symbol: string, price: number}
+- symbol: the stock ticker (e.g., "AAPL")
+- price: current price of the stock
+Note: You only have current price data for forecasting. Use mathematical models to project future prices.
 
 The dashboardParams object contains:
 - historyDays: number of historical days available for analysis

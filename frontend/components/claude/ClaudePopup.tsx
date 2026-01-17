@@ -53,13 +53,13 @@ interface ClaudePopupProps {
 const MAX_DESCRIPTION_LENGTH = 500;
 const MIN_DESCRIPTION_LENGTH = 10;
 
-// Predefined examples - sophisticated backtesting strategies (optimized for ~1 year training data)
+// Predefined examples - backtesting strategies using available data: symbol, price, lookbackPrices, lookbackDates
 const BACKTEST_EXAMPLES = [
-  "Minimum variance optimization. Calculate the covariance matrix of stock returns over 30 days, find portfolio weights that minimize total portfolio variance subject to weights summing to 1.",
-  "Maximum Sharpe ratio strategy. For each stock calculate Sharpe ratio as (return - risk_free_rate) / volatility over 45 days. Allocate weights proportional to positive Sharpe ratios, zero to negative ones.",
-  "Mean reversion momentum hybrid. Calculate 10-day returns and 3-day returns for each stock. Assign high weights to stocks with negative 10-day returns but positive 3-day returns, indicating mean reversion.",
-  "Volatility-adjusted momentum. Calculate 30-day momentum and 15-day volatility for each stock. Set weights to momentum/volatility ratio, normalized to sum to 1, with minimum 5% and maximum 35% per stock.",
-  "Quality factor tilt. Use price-to-book ratios from stockData: assign higher weights to stocks with P/B ratios between 0.5-2.0, lower weights to P/B > 3.0, creating a value-growth balanced portfolio."
+  "Momentum strategy. Calculate the total return over the lookback period for each stock using lookbackPrices. Assign higher weights to stocks with positive momentum, zero weight to stocks with negative returns.",
+  "Low volatility strategy. Calculate the standard deviation of daily returns from lookbackPrices for each stock. Assign higher weights to stocks with lower volatility - inverse of volatility as weight.",
+  "Recent trend strategy. Calculate the slope of prices over the last 10 days using linear regression on lookbackPrices. Weight stocks with positive slopes higher, zero weight for negative slopes.",
+  "Mean reversion strategy. Compare current price to the average of lookbackPrices. Assign higher weights to stocks trading below their average (oversold), lower weights to stocks above average.",
+  "Risk-adjusted momentum. Calculate both momentum (total return) and volatility from lookbackPrices. Weight = momentum / volatility for positive momentum stocks, zero for negative momentum."
 ];
 
 const FORECAST_EXAMPLES = [
@@ -105,10 +105,12 @@ Press Ctrl+Enter to generate, Esc to close`;
     } else {
       return `Describe your investment strategy...
 
+Available data per stock: symbol, price, lookbackPrices (array), lookbackDates (array)
+
 Examples:
-• Minimum variance optimization. Calculate the covariance matrix of stock returns over 30 days, find portfolio weights that minimize total portfolio variance.
-• Maximum Sharpe ratio strategy. Calculate Sharpe ratio as (return - risk_free_rate) / volatility over 45 days. Allocate weights proportional to positive Sharpe ratios.
-• Volatility-adjusted momentum. Calculate 30-day momentum and 15-day volatility for each stock. Set weights to momentum/volatility ratio, normalized to sum to 1.
+• Momentum strategy. Calculate total return over lookback period using lookbackPrices. Higher weights for positive momentum.
+• Low volatility. Calculate standard deviation of daily returns from lookbackPrices. Higher weights for lower volatility.
+• Mean reversion. Compare current price to average of lookbackPrices. Higher weights for stocks trading below average.
 
 The system will use your selected parameters:
 • Backtest Days: ${dashboardParams.backtestDays || 365}

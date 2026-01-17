@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from importlib import import_module
 from typing import Any, Dict, List, Literal, Callable, Tuple
@@ -14,6 +15,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from utils.data_loader import load_prices, load_series
+
+# Configure logging to show INFO level messages
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 # Forecasting model imports
 from forecasting import arima, autoformer, lstm

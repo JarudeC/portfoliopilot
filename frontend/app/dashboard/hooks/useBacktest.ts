@@ -141,34 +141,44 @@ export function useBacktest(): UseBacktestReturn {
   const runBacktest = useCallback(async (tickers: string[]) => {
     if (!tickers.length || loading) return;
 
+    // Capture current values to avoid stale closures in inner functions
+    const currentParams = { ...params };
+    const currentAlgo = btAlgo;
+    const currentStrategy = claudeStrategy;
+
     setLoading(true);
     setProgress(5);
     setResults({ nav: null, weights: null, metrics: null });
 
     try {
       if (isClaudeSelected) {
-        await runClaudeBacktest(tickers);
+        await runClaudeBacktest(tickers, currentParams, currentAlgo, currentStrategy);
       } else {
-        await runTraditionalBacktest(tickers);
+        await runTraditionalBacktest(tickers, currentParams, currentAlgo);
       }
     } catch (e) {
       console.error(e);
       alert((e as Error).message);
       setLoading(false);
     }
-  }, [loading, isClaudeSelected, claudeStrategy]);
+  }, [loading, isClaudeSelected, claudeStrategy, params, btAlgo]);
 
   /**
    * Execute Claude AI strategy backtest with dynamic rebalancing.
    */
-  async function runClaudeBacktest(tickers: string[]) {
-    if (!claudeStrategy || !claudeStrategy.weights) {
+  async function runClaudeBacktest(
+    tickers: string[],
+    currentParams: BacktestParams,
+    currentAlgo: string,
+    currentStrategy: GenerationResult | null
+  ) {
+    if (!currentStrategy || !currentStrategy.weights) {
       alert("⚠️ No Claude Strategy Available\n\nPlease generate a Claude strategy first.");
       throw new Error("No Claude strategy generated.");
     }
 
-    if (claudeStrategy.error && claudeStrategy.fallbackUsed) {
-      const proceed = confirm(`⚠️ Claude Strategy Warning\n\n${claudeStrategy.error}\n\nProceed with fallback?`);
+    if (currentStrategy.error && currentStrategy.fallbackUsed) {
+      const proceed = confirm(`⚠️ Claude Strategy Warning\n\n${currentStrategy.error}\n\nProceed with fallback?`);
       if (!proceed) {
         setLoading(false);
         return;
@@ -181,7 +191,7 @@ export function useBacktest(): UseBacktestReturn {
     await new Promise(resolve => setTimeout(resolve, 500));
     setProgress(90);
 
-    const claudeWeights = claudeStrategy.weights;
+    const claudeWeights = currentStrategy.weights;
     let portfolioWeights: Record<string, number> = {};
     tickers.forEach((ticker, i) => {
       portfolioWeights[ticker] = claudeWeights[i] || 0;
@@ -194,7 +204,7 @@ export function useBacktest(): UseBacktestReturn {
       const today = new Date();
       const end = today.toISOString().slice(0, 10);
       const tradingDayMultiplier = 1.43;
-      const calendarDaysBack = Math.round(params.btHistDays * tradingDayMultiplier);
+      const calendarDaysBack = Math.round(currentParams.btHistDays * tradingDayMultiplier);
       const start = new Date(today.getTime() - calendarDaysBack * 86_400_000).toISOString().slice(0, 10);
 
       const tickerDataPromises = tickers.map(async (ticker, index) => {
@@ -219,7 +229,7 @@ export function useBacktest(): UseBacktestReturn {
       const allTickerData = await Promise.all(tickerDataPromises);
 
       if (allTickerData.length > 0 && allTickerData[0].dates.length > 1) {
-        const calculationResult = await calculatePortfolioReturns(allTickerData, tickers, portfolioWeights);
+        const calculationResult = await calculatePortfolioReturns(allTickerData, tickers, portfolioWeights, currentParams, currentStrategy);
         Object.assign(nav, calculationResult.nav);
         metrics = calculationResult.metrics;
         portfolioWeights = calculationResult.portfolioWeights;
@@ -241,7 +251,7 @@ export function useBacktest(): UseBacktestReturn {
     setProgress(100);
     setLoading(false);
 
-    await logBacktestResult(nav, portfolioWeights, metrics, tickers);
+    await logBacktestResult(nav, portfolioWeights, metrics, tickers, currentParams, currentAlgo);
   }
 
   /**
@@ -250,14 +260,16 @@ export function useBacktest(): UseBacktestReturn {
   async function calculatePortfolioReturns(
     allTickerData: Array<{ ticker: string; weight: number; dates: string[]; prices: number[] }>,
     tickers: string[],
-    portfolioWeights: Record<string, number>
+    portfolioWeights: Record<string, number>,
+    currentParams: BacktestParams,
+    currentStrategy: GenerationResult | null
   ) {
     const dates = allTickerData[0].dates;
     const prices = allTickerData.map(t => t.prices);
     const nav: Record<string, number> = {};
 
-    const firstSig = params.lookBack;
-    const numWin = Math.floor((dates.length - firstSig) / params.evalWin);
+    const firstSig = currentParams.lookBack;
+    const numWin = Math.floor((dates.length - firstSig) / currentParams.evalWin);
 
     let portfolioValue = 1.0;
     let prevWeights: number[] | null = null;
@@ -265,18 +277,18 @@ export function useBacktest(): UseBacktestReturn {
     const portfolioReturns: number[] = [];
 
     for (let step = 0; step < numWin; step++) {
-      const windowStart = firstSig + step * params.evalWin;
-      const currentWeights = await calculateWindowWeights(allTickerData, dates, windowStart);
+      const windowStart = firstSig + step * currentParams.evalWin;
+      const currentWeights = await calculateWindowWeights(allTickerData, dates, windowStart, currentParams, currentStrategy);
 
       let transactionCost = 0;
       if (prevWeights === null) {
-        transactionCost = currentWeights.reduce((sum: number, w: number) => sum + Math.abs(w), 0) * params.tc;
+        transactionCost = currentWeights.reduce((sum: number, w: number) => sum + Math.abs(w), 0) * currentParams.tc;
       } else {
         const turnover = currentWeights.reduce((sum: number, w: number, i: number) => sum + Math.abs(w - (prevWeights![i] || 0)), 0);
-        transactionCost = turnover * params.tc;
+        transactionCost = turnover * currentParams.tc;
       }
 
-      const windowEnd = Math.min(windowStart + params.evalWin, dates.length);
+      const windowEnd = Math.min(windowStart + currentParams.evalWin, dates.length);
 
       for (let day = windowStart; day < windowEnd; day++) {
         if (day === 0) continue;
@@ -324,9 +336,11 @@ export function useBacktest(): UseBacktestReturn {
   async function calculateWindowWeights(
     allTickerData: Array<{ ticker: string; weight: number; dates: string[]; prices: number[] }>,
     dates: string[],
-    windowStart: number
+    windowStart: number,
+    currentParams: BacktestParams,
+    currentStrategy: GenerationResult | null
   ): Promise<number[]> {
-    const lookbackStart = Math.max(0, windowStart - params.lookBack);
+    const lookbackStart = Math.max(0, windowStart - currentParams.lookBack);
     const lookbackData = allTickerData.map(tickerData => ({
       symbol: tickerData.ticker,
       price: tickerData.prices[windowStart - 1] || tickerData.prices[tickerData.prices.length - 1],
@@ -335,29 +349,31 @@ export function useBacktest(): UseBacktestReturn {
     }));
 
     try {
-      if (!claudeStrategy?.code) throw new Error('No AI strategy code');
+      if (!currentStrategy?.code) throw new Error('No AI strategy code');
 
       const { executeUserCode } = await import('../../../lib/claude/client');
       const result = await executeUserCode(
-        claudeStrategy.code,
+        currentStrategy.code,
         'backtest',
         lookbackData,
         undefined,
         undefined,
         {
-          backtestDays: params.btHistDays,
-          lookbackDays: params.lookBack,
-          evaluationWindow: params.evalWin,
-          transactionCost: params.tc
+          backtestDays: currentParams.btHistDays,
+          lookbackDays: currentParams.lookBack,
+          evaluationWindow: currentParams.evalWin,
+          transactionCost: currentParams.tc
         }
       );
 
       if (result.success && result.weights && Array.isArray(result.weights)) {
         const hasValidWeights = result.weights.every(w => typeof w === 'number' && isFinite(w));
-        if (hasValidWeights) return result.weights;
+        if (hasValidWeights) {
+          return result.weights;
+        }
       }
       throw new Error('AI failed to generate valid weights');
-    } catch {
+    } catch (error) {
       return new Array(allTickerData.length).fill(1.0 / allTickerData.length);
     }
   }
@@ -404,7 +420,9 @@ export function useBacktest(): UseBacktestReturn {
     nav: Record<string, number>,
     portfolioWeights: Record<string, number>,
     metrics: Record<string, string | number>,
-    tickers: string[]
+    tickers: string[],
+    currentParams: BacktestParams,
+    currentAlgo: string
   ) {
     try {
       const claudeJobId = `claude-backtest-${Date.now()}`;
@@ -412,8 +430,8 @@ export function useBacktest(): UseBacktestReturn {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          data: { status: 'done', nav, weights: portfolioWeights, metrics, algo: btAlgo.toUpperCase(), tickers },
-          originalParams: { algo: btAlgo.toUpperCase(), tickers, hist_days: params.btHistDays, lookback: params.lookBack, eval_win: params.evalWin, tc: params.tc }
+          data: { status: 'done', nav, weights: portfolioWeights, metrics, algo: currentAlgo.toUpperCase(), tickers },
+          originalParams: { algo: currentAlgo.toUpperCase(), tickers, hist_days: currentParams.btHistDays, lookback: currentParams.lookBack, eval_win: currentParams.evalWin, tc: currentParams.tc }
         })
       });
     } catch {
@@ -424,18 +442,22 @@ export function useBacktest(): UseBacktestReturn {
   /**
    * Execute traditional algorithm backtest via backend API.
    */
-  async function runTraditionalBacktest(tickers: string[]) {
+  async function runTraditionalBacktest(
+    tickers: string[],
+    currentParams: BacktestParams,
+    currentAlgo: string
+  ) {
     const res = await fetch("/api/train", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        algo: btAlgo,
+        algo: currentAlgo,
         tickers,
-        hist_days: params.btHistDays,
-        lookback: params.lookBack,
-        eval_win: params.evalWin,
+        hist_days: currentParams.btHistDays,
+        lookback: currentParams.lookBack,
+        eval_win: currentParams.evalWin,
         eta: 0.02,
-        tc: params.tc,
+        tc: currentParams.tc,
       }),
     });
     if (!res.ok) throw new Error(`Backend ${res.status}`);

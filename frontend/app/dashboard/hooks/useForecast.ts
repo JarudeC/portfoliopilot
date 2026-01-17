@@ -138,6 +138,11 @@ export function useForecast(): UseForecastReturn {
   const runForecast = useCallback(async (tickers: string[]) => {
     if (!tickers.length || loading) return;
 
+    // Capture current values to avoid stale closures in inner functions
+    const currentParams = { ...params };
+    const currentAlgo = algo;
+    const currentStrategy = claudeStrategy;
+
     setLoading(true);
     setProgress(0);
     setForecastDataMap({});
@@ -147,7 +152,7 @@ export function useForecast(): UseForecastReturn {
     const today = new Date();
     const end = today.toISOString().slice(0, 10);
     const tradingDayMultiplier = 1.43;
-    const calendarDaysBack = Math.round(params.histDays * tradingDayMultiplier);
+    const calendarDaysBack = Math.round(currentParams.histDays * tradingDayMultiplier);
     const start = new Date(today.getTime() - calendarDaysBack * 86_400_000).toISOString().slice(0, 10);
 
     const totalTickers = tickers.length;
@@ -156,19 +161,19 @@ export function useForecast(): UseForecastReturn {
 
     try {
       if (isClaudeSelected) {
-        await runClaudeForecast(tickers, start, end, tempDataMap, () => {
+        await runClaudeForecast(tickers, start, end, tempDataMap, currentParams, currentStrategy, () => {
           completedTickers++;
           setProgress((completedTickers / totalTickers) * 100);
         });
       } else {
-        await runTraditionalForecast(tickers, start, end, tempDataMap, () => {
+        await runTraditionalForecast(tickers, start, end, tempDataMap, currentParams, currentAlgo, () => {
           completedTickers++;
           setProgress((completedTickers / totalTickers) * 100);
         });
       }
 
       setForecastDataMap(tempDataMap);
-      await calculateAndLogMetrics(tempDataMap, start, end);
+      await calculateAndLogMetrics(tempDataMap, start, end, currentParams, currentAlgo, currentStrategy);
       setLoading(false);
 
     } catch (e) {
@@ -186,15 +191,17 @@ export function useForecast(): UseForecastReturn {
     start: string,
     end: string,
     tempDataMap: Record<string, ForecastData>,
+    currentParams: ForecastParams,
+    currentStrategy: GenerationResult | null,
     onProgress: () => void
   ) {
-    if (!claudeStrategy || !claudeStrategy.predictions) {
+    if (!currentStrategy || !currentStrategy.predictions) {
       alert("⚠️ No Claude Strategy Available\n\nPlease generate a Claude strategy first.");
       setLoading(false);
       return;
     }
 
-    const claudePredictions = claudeStrategy.predictions;
+    const claudePredictions = currentStrategy.predictions;
 
     for (let i = 0; i < tickers.length; i++) {
       const ticker = tickers[i];
@@ -227,7 +234,7 @@ export function useForecast(): UseForecastReturn {
             price: isMultiplier ? lastPrice * pred.price : pred.price
           }));
         } else {
-          forecastSeries = generateFallbackForecast(payload.prices, end, params.forecastDays);
+          forecastSeries = generateFallbackForecast(payload.prices, end, currentParams.forecastDays);
         }
 
         tempDataMap[ticker] = { historySeries, forecastSeries, algorithm: "Custom AI Strategy" };
@@ -249,6 +256,8 @@ export function useForecast(): UseForecastReturn {
     start: string,
     end: string,
     tempDataMap: Record<string, ForecastData>,
+    currentParams: ForecastParams,
+    currentAlgo: string,
     onProgress: () => void
   ) {
     for (let i = 0; i < tickers.length; i++) {
@@ -256,10 +265,10 @@ export function useForecast(): UseForecastReturn {
       try {
         if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
 
-        const res = await fetch(`/api/forecast/${algo.toLowerCase()}`, {
+        const res = await fetch(`/api/forecast/${currentAlgo.toLowerCase()}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ticker, start, end, horizon: params.forecastDays }),
+          body: JSON.stringify({ ticker, start, end, horizon: currentParams.forecastDays }),
         });
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -276,14 +285,14 @@ export function useForecast(): UseForecastReturn {
         tempDataMap[ticker] = {
           historySeries: toSeries(payload.history_dates, payload.history_values),
           forecastSeries: toSeries(payload.forecast_dates, payload.forecast_values),
-          algorithm: algo
+          algorithm: currentAlgo
         };
 
         onProgress();
 
       } catch (err) {
         console.error(`Forecast failed for ${ticker}:`, err);
-        tempDataMap[ticker] = { historySeries: [], forecastSeries: [], algorithm: algo };
+        tempDataMap[ticker] = { historySeries: [], forecastSeries: [], algorithm: currentAlgo };
         onProgress();
       }
     }
@@ -315,13 +324,18 @@ export function useForecast(): UseForecastReturn {
   async function calculateAndLogMetrics(
     tempDataMap: Record<string, ForecastData>,
     start: string,
-    end: string
+    end: string,
+    currentParams: ForecastParams,
+    currentAlgo: string,
+    currentStrategy: GenerationResult | null
   ) {
     const forecasts = Object.entries(tempDataMap).filter(([_, data]) =>
       data.historySeries.length > 0 && data.forecastSeries.length > 0
     );
 
     if (forecasts.length === 0) return;
+
+    const currentIsClaudeSelected = currentAlgo === "Custom AI Strategy";
 
     const updatedForecasts = await Promise.all(
       forecasts.map(async ([ticker, data]) => {
@@ -330,7 +344,7 @@ export function useForecast(): UseForecastReturn {
             data,
             data.algorithm!,
             ticker,
-            isClaudeSelected ? claudeStrategy : undefined
+            currentIsClaudeSelected ? currentStrategy : undefined
           );
           return [ticker, { ...data, metrics }];
         } catch (error) {
@@ -356,7 +370,7 @@ export function useForecast(): UseForecastReturn {
           ticker,
           data,
           forecastAlgorithm: data.algorithm!,
-          claudeStrategy: isClaudeSelected ? claudeStrategy : undefined
+          claudeStrategy: currentIsClaudeSelected ? currentStrategy : undefined
         };
       });
 
@@ -377,7 +391,7 @@ export function useForecast(): UseForecastReturn {
       setOverallMetricsLoading(false);
     }
 
-    await logForecastResult(forecasts, start, end, metricsForLogging);
+    await logForecastResult(forecasts, start, end, metricsForLogging, currentParams, currentAlgo);
   }
 
   /**
@@ -387,19 +401,21 @@ export function useForecast(): UseForecastReturn {
     forecasts: [string, ForecastData][],
     start: string,
     end: string,
-    metricsForLogging: any
+    metricsForLogging: any,
+    currentParams: ForecastParams,
+    currentAlgo: string
   ) {
     try {
       const logPayload = {
         type: 'forecast',
         stocks: forecasts.map(([ticker]) => ticker),
-        model: algo.toUpperCase(),
+        model: currentAlgo.toUpperCase(),
         parameters: {
-          algorithm: algo,
+          algorithm: currentAlgo,
           start_date: start,
           end_date: end,
-          history_days: params.histDays,
-          forecast_days: params.forecastDays,
+          history_days: currentParams.histDays,
+          forecast_days: currentParams.forecastDays,
           tickers: forecasts.map(([ticker]) => ticker)
         },
         results: {
