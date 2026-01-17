@@ -13,6 +13,8 @@ import {
   ErrorFactory,
 } from '../../../../lib/claude';
 import type { StockData, GenerationResult, SecurityConfig } from '../../../../lib/claude';
+import { requireAuth } from '@/lib/auth/server';
+import { createServerApiKeyService } from '@/lib/services/api-keys';
 
 // Request/Response Type Interfaces
 interface GenerateRequest {
@@ -241,17 +243,36 @@ function createSuccessResponse(result: GenerationResult, rateLimitInfo?: { remai
 // Main API Route Handler
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
+
   try {
-    // 1. Validate API Key
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      console.error('ANTHROPIC_API_KEY not configured');
-      const error = new ClaudeApiError('Service temporarily unavailable - API key not configured', 503, null, requestId);
-      return createErrorResponse(error);
+    // 1. Require Authentication
+    let user;
+    try {
+      user = await requireAuth();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: 'Please log in to use AI features.', statusCode: 401 },
+        { status: 401 }
+      );
     }
-    
-    // 2. Rate Limiting
+
+    // 2. Get User's API Key (no fallback to system key)
+    const keyService = createServerApiKeyService();
+    const apiKey = await keyService.getKey(user.id, 'anthropic');
+
+    if (!apiKey) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Please add your Anthropic API key in Settings to use AI features.',
+          statusCode: 400,
+          suggestions: ['Go to Settings and add your Anthropic API key']
+        },
+        { status: 400 }
+      );
+    }
+
+    // 3. Rate Limiting
     const clientIP = getClientIP(request);
     const rateLimitCheck = checkRateLimit(clientIP);
     
@@ -269,7 +290,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return response;
     }
     
-    // 3. Parse and Validate Request Body
+    // 4. Parse and Validate Request Body
     let requestBody: any;
     try {
       requestBody = await request.json();
@@ -285,7 +306,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     
     const { userDescription, stockData, mode, securityConfig, forecastDays, dashboardParams, generateOnly, userCode } = validation.data!;
     
-    // 4. Security Validation
+    // 5. Security Validation
     const secConfig = securityConfig ? createSecurityConfig(securityConfig) : createSecurityConfig({});
     const securityValidation = validateSecurity(userDescription, undefined, secConfig);
     
@@ -299,7 +320,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return createErrorResponse(error, 400);
     }
     
-    // 5. Initialize Claude API
+    // 6. Initialize Claude API
     let anthropic: Anthropic;
     try {
       anthropic = new Anthropic({
@@ -311,7 +332,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return createErrorResponse(error);
     }
     
-    // 6. Create Claude API Call Function
+    // 7. Create Claude API Call Function
     const claudeApiCall = async (prompt: string): Promise<string> => {
       try {
         const message = await anthropic.messages.create({
@@ -347,7 +368,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     };
     
-    // 7. Handle different request types
+    // 8. Handle different request types
     const processRequest = async (): Promise<GenerationResult | { success: boolean; code?: string; error?: string }> => {
       return new Promise(async (resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -399,7 +420,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       });
     };
     
-    // 8. Execute Request
+    // 9. Execute Request
     let result: GenerationResult | { success: boolean; code?: string; error?: string };
     try {
       result = await processRequest();
@@ -457,7 +478,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
     
-    // 9. Return Success Response
+    // 10. Return Success Response
     if (generateOnly && 'code' in result) {
       // For code-only generation, return special response format
       return NextResponse.json({
@@ -478,7 +499,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     
   } catch (error: any) {
-    // 10. Global Error Handler
+    // 11. Global Error Handler
     console.error('Unexpected error in Claude API route:', error);
     
     if (error instanceof ClaudeError) {

@@ -1,8 +1,31 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { generateStrategy, generateCodeOnly, executeUserCode, ClaudeClientError, ClientErrorType, type GenerationResult, type StockData } from "../../lib/claude";
+import Link from "next/link";
+import { generateCodeOnly, executeUserCode, type GenerationResult, type StockData } from "../../lib/claude";
 import CodeEditor from './CodeEditor';
+
+/**
+ * Extract user-friendly error message from any error.
+ * API key validation happens before this point, so we only handle
+ * network, rate limit, and execution errors here.
+ */
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes('rate limit') || msg.includes('too many')) {
+      return "Too many requests. Please wait a moment before trying again.";
+    }
+    if (msg.includes('network') || msg.includes('timeout') || msg.includes('fetch')) {
+      return "Network issue. Please check your connection and try again.";
+    }
+    if (msg.includes('duplicate') || msg.includes('already being processed')) {
+      return "A similar request is already being processed.";
+    }
+    return err.message;
+  }
+  return "An unexpected error occurred. Please try again.";
+}
 
 // Popup component props
 interface ClaudePopupProps {
@@ -10,7 +33,7 @@ interface ClaudePopupProps {
   onClose: () => void;
   stockData?: StockData[];
   onStrategyGenerated?: (result: GenerationResult) => void;
-  onError?: (error: ClaudeClientError | Error) => void;
+  onError?: (error: Error) => void;
   mode: 'forecast' | 'backtest';
   // Dashboard parameters
   dashboardParams?: {
@@ -98,17 +121,21 @@ Press Ctrl+Enter to generate, Esc to close`;
     }
   };
 
-  // State Management  
+  // State Management
   const [userDescription, setUserDescription] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<GenerationResult | null>(null);
-  
+
   // Code review states
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
   const [showCodeReview, setShowCodeReview] = useState<boolean>(false);
   const [executingCode, setExecutingCode] = useState<boolean>(false);
+
+  // API key status
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
+  const [checkingApiKey, setCheckingApiKey] = useState<boolean>(true);
 
   // Refs for DOM elements
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -179,39 +206,10 @@ Press Ctrl+Enter to generate, Esc to close`;
         setError(result.error || "No code was generated. Please try a different description.");
       }
       
-    } catch (err: any) {
+    } catch (err) {
       console.error("Code generation error:", err);
-      
-      let errorMessage = "Failed to generate code. Please try again.";
-      
-      if (err instanceof ClaudeClientError) {
-        switch (err.type) {
-          case ClientErrorType.RATE_LIMIT_ERROR:
-            errorMessage = "Too many requests. Please wait a moment before trying again.";
-            break;
-          case ClientErrorType.VALIDATION_ERROR:
-            errorMessage = `Input validation failed: ${err.message}`;
-            break;
-          case ClientErrorType.NETWORK_ERROR:
-          case ClientErrorType.TIMEOUT_ERROR:
-            errorMessage = "Network issue. Please check your connection and try again.";
-            break;
-          case ClientErrorType.API_ERROR:
-            errorMessage = "Service temporarily unavailable. Please try again in a few moments.";
-            break;
-          case ClientErrorType.DUPLICATE_REQUEST:
-            errorMessage = "A similar request is already being processed.";
-            break;
-          default:
-            errorMessage = err.message || errorMessage;
-        }
-      }
-      
-      setError(errorMessage);
-      
-      if (onError) {
-        onError(err);
-      }
+      setError(getErrorMessage(err));
+      onError?.(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setLoading(false);
     }
@@ -250,40 +248,10 @@ Press Ctrl+Enter to generate, Esc to close`;
         setError("Execution failed, using fallback strategy. The edited code couldn't be executed safely.");
       }
 
-    } catch (err: any) {
+    } catch (err) {
       console.error("Strategy execution error:", err);
-      
-      let errorMessage = "An unexpected error occurred. Please try again.";
-      
-      if (err instanceof ClaudeClientError) {
-        switch (err.type) {
-          case ClientErrorType.RATE_LIMIT_ERROR:
-            errorMessage = "Too many requests. Please wait a moment before trying again.";
-            break;
-          case ClientErrorType.VALIDATION_ERROR:
-            errorMessage = `Input validation failed: ${err.message}`;
-            break;
-          case ClientErrorType.NETWORK_ERROR:
-          case ClientErrorType.TIMEOUT_ERROR:
-            errorMessage = "Network issue. Please check your connection and try again.";
-            break;
-          case ClientErrorType.API_ERROR:
-            errorMessage = "Service temporarily unavailable. Please try again in a few moments.";
-            break;
-          case ClientErrorType.DUPLICATE_REQUEST:
-            errorMessage = "A similar request is already being processed.";
-            break;
-          default:
-            errorMessage = err.message || errorMessage;
-        }
-      }
-      
-      setError(errorMessage);
-      
-      // Notify parent component
-      if (onError) {
-        onError(err);
-      }
+      setError(getErrorMessage(err));
+      onError?.(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setExecutingCode(false);
     }
@@ -351,16 +319,150 @@ Press Ctrl+Enter to generate, Esc to close`;
 
   // Focus management
   useEffect(() => {
-    if (isOpen && textareaRef.current) {
+    if (isOpen && textareaRef.current && hasApiKey) {
       // Small delay to ensure the modal is fully rendered
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 100);
     }
-  }, [isOpen]);
+  }, [isOpen, hasApiKey]);
 
+  // Check for API key on mount (runs once per component mount)
+  useEffect(() => {
+    setCheckingApiKey(true);
+    fetch('/api/settings/api-key?provider=anthropic')
+      .then(res => res.json())
+      .then(data => {
+        setHasApiKey(data.hasKey === true);
+      })
+      .catch(() => {
+        // If we can't check, assume no key (will get proper error on generate)
+        setHasApiKey(false);
+      })
+      .finally(() => {
+        setCheckingApiKey(false);
+      });
+  }, []); // Empty dependency = runs once on mount
 
   if (!isOpen) return null;
+
+  // Show loading state while checking API key
+  if (checkingApiKey) {
+    return (
+      <div
+        ref={overlayRef}
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        onClick={handleOverlayClick}
+      >
+        <div className="bg-[#14273F] border border-[#4CC9F0]/30 rounded-xl p-8 max-w-md w-full text-center">
+          <div className="w-8 h-8 border-2 border-[#4CC9F0]/30 border-t-[#4CC9F0] rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Checking configuration...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show setup prompt if no API key is configured
+  if (!hasApiKey) {
+    return (
+      <div
+        ref={overlayRef}
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        onClick={handleOverlayClick}
+      >
+        <div className="bg-[#14273F] border border-[#4CC9F0]/30 rounded-xl max-w-lg w-full">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-[#4CC9F0]/20">
+            <h2 className="text-xl font-bold text-white">API Key Required</h2>
+            <button
+              onClick={handleClose}
+              className="text-gray-400 hover:text-white transition-colors p-2"
+              aria-label="Close"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="p-6 space-y-6">
+            {/* Icon and Message */}
+            <div className="text-center">
+              <div className="w-16 h-16 bg-[#4CC9F0]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-[#4CC9F0]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-2">
+                Set Up Your AI Features
+              </h3>
+              <p className="text-gray-400 text-sm">
+                To use AI-powered strategy generation, you need to add your own Anthropic API key.
+                Your key is encrypted and stored securely.
+              </p>
+            </div>
+
+            {/* Steps */}
+            <div className="bg-[#0D1B2A] rounded-lg p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-6 h-6 bg-[#4CC9F0]/20 text-[#4CC9F0] rounded-full flex items-center justify-center text-sm font-medium">1</span>
+                <div>
+                  <p className="text-white text-sm font-medium">Get an API key</p>
+                  <p className="text-gray-400 text-xs">
+                    Visit{' '}
+                    <a
+                      href="https://console.anthropic.com/settings/keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#4CC9F0] hover:underline"
+                    >
+                      console.anthropic.com
+                    </a>
+                    {' '}to create your API key
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-6 h-6 bg-[#4CC9F0]/20 text-[#4CC9F0] rounded-full flex items-center justify-center text-sm font-medium">2</span>
+                <div>
+                  <p className="text-white text-sm font-medium">Add it to Settings</p>
+                  <p className="text-gray-400 text-xs">
+                    Paste your API key in the Settings page to enable AI features
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-6 h-6 bg-[#4CC9F0]/20 text-[#4CC9F0] rounded-full flex items-center justify-center text-sm font-medium">3</span>
+                <div>
+                  <p className="text-white text-sm font-medium">Start generating strategies</p>
+                  <p className="text-gray-400 text-xs">
+                    Come back here to create custom AI-powered strategies
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <Link
+                href="/settings"
+                className="flex-1 bg-[#4CC9F0] hover:bg-[#4CC9F0]/90 text-black font-medium py-3 px-6 rounded-lg transition-colors text-center"
+              >
+                Go to Settings
+              </Link>
+              <button
+                onClick={handleClose}
+                className="px-6 py-3 text-gray-400 hover:text-white border border-gray-600 hover:border-gray-500 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Show code editor if we have generated code
   if (showCodeReview && generatedCode) {
