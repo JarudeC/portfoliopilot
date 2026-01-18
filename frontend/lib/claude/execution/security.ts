@@ -169,21 +169,27 @@ const DANGEROUS_CODE_PATTERNS = [
   // =========================================================================
   // CATEGORY 2: DOM and Browser Access
   // Blocks access to browser APIs that could manipulate the page
+  // Note: Patterns are specific to avoid false positives (e.g., "priceHistory")
   // =========================================================================
-  /\bdocument\b/i,                   // document.anything
-  /\bwindow\b/i,                     // window.anything
-  /\bnavigator\b/i,                  // navigator.anything
-  /\blocation\b/i,                   // location.href, etc.
-  /\bhistory\b/i,                    // history.pushState, etc.
+  /\bdocument\s*\./i,                // document.anything
+  /\bdocument\s*\[/i,                // document['prop']
+  /\bwindow\s*\./i,                  // window.anything
+  /\bwindow\s*\[/i,                  // window['prop']
+  /\bnavigator\s*\./i,               // navigator.userAgent, etc.
+  /\blocation\s*\./i,                // location.href (not "stockLocation")
+  /\blocation\s*=/i,                 // location = 'url'
+  /\bhistory\s*\./i,                 // history.pushState (not "priceHistory")
 
   // =========================================================================
   // CATEGORY 3: Storage Access
   // Blocks access to persistent storage mechanisms
   // =========================================================================
-  /localStorage/i,                   // localStorage.getItem, etc.
-  /sessionStorage/i,                 // sessionStorage.getItem, etc.
-  /\bcookie\b/i,                     // document.cookie
-  /indexedDB/i,                      // IndexedDB access
+  /localStorage\s*\./i,              // localStorage.getItem, etc.
+  /localStorage\s*\[/i,              // localStorage['key']
+  /sessionStorage\s*\./i,            // sessionStorage.getItem, etc.
+  /sessionStorage\s*\[/i,            // sessionStorage['key']
+  /\.cookie\b/i,                     // document.cookie (not "cookie" variable)
+  /indexedDB\s*\./i,                 // IndexedDB.open, etc.
 
   // =========================================================================
   // CATEGORY 4: Network Access
@@ -198,11 +204,13 @@ const DANGEROUS_CODE_PATTERNS = [
   // =========================================================================
   // CATEGORY 5: Node.js / System Access
   // Blocks server-side and system-level operations
+  // Note: Patterns are specific to avoid false positives (e.g., "processing")
   // =========================================================================
   /\brequire\s*\(/i,                 // require('module')
   /\bimport\s*\(/i,                  // import('module')
-  /\bprocess\b/i,                    // process.env, etc.
-  /\bfs\b/i,                         // fs.readFile, etc.
+  /\bprocess\s*\./i,                 // process.env (not "processing")
+  /\bprocess\s*\[/i,                 // process['env']
+  /\bfs\s*\./i,                      // fs.readFile (not "prefs")
   /child_process/i,                  // child_process.exec
   /\bexec\s*\(/i,                    // exec('command')
   /\bspawn\s*\(/i,                   // spawn('command')
@@ -228,10 +236,14 @@ const DANGEROUS_CODE_PATTERNS = [
   // =========================================================================
   // CATEGORY 7: Global Object Access
   // Blocks direct access to global scope
+  // Note: Patterns are specific to avoid false positives
   // =========================================================================
-  /\bglobalThis\b/i,                 // globalThis.fetch
-  /\bself\b/i,                       // self.fetch (web worker global)
-  /\bglobal\b/i,                     // global.process (Node.js)
+  /\bglobalThis\s*\./i,              // globalThis.fetch
+  /\bglobalThis\s*\[/i,              // globalThis['fetch']
+  /\bself\s*\./i,                    // self.fetch (not "myself")
+  /\bself\s*\[/i,                    // self['fetch']
+  /\bglobal\s*\./i,                  // global.process (not "globalVar")
+  /\bglobal\s*\[/i,                  // global['process']
 
   // =========================================================================
   // CATEGORY 8: Additional Dangerous APIs

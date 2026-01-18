@@ -59,8 +59,8 @@ const BLOCKED_GLOBALS = [
   // Network APIs
   'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource',
 
-  // Dynamic code execution
-  'eval', 'Function',
+  // Note: 'eval' and 'Function' cannot be shadowed in strict mode (reserved words)
+  // They are blocked by pattern validation in security.ts instead
 
   // Timers (can be used for side-channel attacks)
   'setTimeout', 'setInterval', 'setImmediate',
@@ -91,7 +91,54 @@ const BLOCKED_GLOBALS = [
  */
 function createSafeGlobals(requestId?: string) {
   // Create frozen Math object (pure mathematical operations)
-  const safeMath = Object.freeze({ ...Math });
+  // Note: Math methods are not enumerable, so we must explicitly copy them
+  const safeMath = Object.freeze({
+    // Constants
+    E: Math.E,
+    LN10: Math.LN10,
+    LN2: Math.LN2,
+    LOG10E: Math.LOG10E,
+    LOG2E: Math.LOG2E,
+    PI: Math.PI,
+    SQRT1_2: Math.SQRT1_2,
+    SQRT2: Math.SQRT2,
+    // Methods
+    abs: Math.abs.bind(Math),
+    acos: Math.acos.bind(Math),
+    acosh: Math.acosh.bind(Math),
+    asin: Math.asin.bind(Math),
+    asinh: Math.asinh.bind(Math),
+    atan: Math.atan.bind(Math),
+    atan2: Math.atan2.bind(Math),
+    atanh: Math.atanh.bind(Math),
+    cbrt: Math.cbrt.bind(Math),
+    ceil: Math.ceil.bind(Math),
+    clz32: Math.clz32.bind(Math),
+    cos: Math.cos.bind(Math),
+    cosh: Math.cosh.bind(Math),
+    exp: Math.exp.bind(Math),
+    expm1: Math.expm1.bind(Math),
+    floor: Math.floor.bind(Math),
+    fround: Math.fround.bind(Math),
+    hypot: Math.hypot.bind(Math),
+    imul: Math.imul.bind(Math),
+    log: Math.log.bind(Math),
+    log10: Math.log10.bind(Math),
+    log1p: Math.log1p.bind(Math),
+    log2: Math.log2.bind(Math),
+    max: Math.max.bind(Math),
+    min: Math.min.bind(Math),
+    pow: Math.pow.bind(Math),
+    random: Math.random.bind(Math),
+    round: Math.round.bind(Math),
+    sign: Math.sign.bind(Math),
+    sin: Math.sin.bind(Math),
+    sinh: Math.sinh.bind(Math),
+    sqrt: Math.sqrt.bind(Math),
+    tan: Math.tan.bind(Math),
+    tanh: Math.tanh.bind(Math),
+    trunc: Math.trunc.bind(Math),
+  });
 
   // Create frozen JSON object with bound methods
   const safeJSON = Object.freeze({
@@ -189,6 +236,7 @@ export async function executeJavaScriptLocally(
   try {
     // Transpile TypeScript to JavaScript using Babel
     const jsCode = await transpileTypeScriptToJavaScript(userCode);
+
 
     // Build global shadowing code (Layer 3)
     // This sets all dangerous globals to undefined in the execution scope
@@ -290,8 +338,12 @@ export async function executeJavaScriptLocally(
 
     // Validate result structure
     if (mode === 'backtest' && result.weights) {
-      if (!Array.isArray(result.weights) || result.weights.some((w: any) => typeof w !== 'number' || !isFinite(w))) {
-        throw new Error('calculateWeights must return an array of finite numbers');
+      if (!Array.isArray(result.weights)) {
+        throw new Error('calculateWeights must return an array of numbers');
+      }
+      const invalidWeights = result.weights.filter((w: any) => typeof w !== 'number' || !Number.isFinite(w));
+      if (invalidWeights.length > 0) {
+        throw new Error(`calculateWeights returned ${invalidWeights.length} invalid values (must be finite numbers)`);
       }
     } else if (mode === 'forecast' && result.predictions) {
       if (!Array.isArray(result.predictions) ||
@@ -332,12 +384,24 @@ export async function transpileTypeScriptToJavaScript(code: string): Promise<str
     return result.code;
 
   } catch (error: any) {
-    console.warn('Babel TypeScript transpilation failed:', error);
-    console.log('Falling back to simple regex-based stripping');
+    // Babel failed, fall back to simple regex-based type stripping
 
     // Fallback: simple regex-based type stripping
-    return code
-      .replace(/:\s*[^=,){\s]+(?=\s*[=,){])/g, '')  // Remove : Type annotations
-      .replace(/\):\s*[^{]+\{/g, ') {');            // Remove return types
+    // This handles basic TypeScript type annotations
+    let stripped = code;
+
+    // Remove type annotations after variable names: const x: Type = ...
+    stripped = stripped.replace(/:\s*[a-zA-Z_$][a-zA-Z0-9_$<>\[\]|&\s]*(?=\s*[=,)\];])/g, '');
+
+    // Remove function return types: function foo(): Type {
+    stripped = stripped.replace(/\)\s*:\s*[a-zA-Z_$][a-zA-Z0-9_$<>\[\]|&\s]*\s*\{/g, ') {');
+
+    // Remove generic type parameters: <T, U>
+    stripped = stripped.replace(/<[a-zA-Z_$][a-zA-Z0-9_$,\s]*>/g, '');
+
+    // Remove 'as Type' casts
+    stripped = stripped.replace(/\s+as\s+[a-zA-Z_$][a-zA-Z0-9_$<>\[\]|&\s]*/g, '');
+
+    return stripped;
   }
 }
