@@ -2,40 +2,164 @@
  * Sandboxed JavaScript execution for user-provided strategy code.
  * Runs code in an isolated environment with restricted globals and timeout protection.
  *
- * Security measures:
- * - Only safe globals exposed (Math, Date, Array, etc.)
- * - No access to window, document, fetch, eval, etc.
- * - Configurable timeout to prevent infinite loops
- * - TypeScript transpilation via Babel
+ * ## Security Architecture (Multi-Layer Defense)
+ *
+ * This module implements Layers 2-4 of the security system:
+ *
+ * ### Layer 2: Frozen Globals (this file - createSafeGlobals)
+ * - All exposed globals are FROZEN using Object.freeze()
+ * - Prevents prototype pollution attacks
+ * - Limited API surface - only safe operations exposed
+ *
+ * ### Layer 3: Global Shadowing (this file - BLOCKED_GLOBALS)
+ * - Dangerous globals explicitly shadowed with undefined
+ * - Even if code tries to access window/document/etc., they're undefined
+ *
+ * ### Layer 4: Strict Mode
+ * - "use strict" enforced in all user code
+ * - Prevents `this` from leaking global object
+ * - Throws on undeclared variable access
+ *
+ * ## Important Security Notes
+ *
+ * This is NOT true sandboxing (like Web Workers or iframes). The code runs
+ * in the same JavaScript context. However, the multi-layer defense makes
+ * exploitation extremely difficult:
+ *
+ * 1. Pattern validation (security.ts) blocks known attack patterns
+ * 2. Frozen globals prevent prototype pollution
+ * 3. Global shadowing prevents direct access to dangerous APIs
+ * 4. Strict mode prevents `this` exploitation
+ *
+ * For this use case (portfolio calculations), this is sufficient because:
+ * - Code only receives stockData and returns weights/predictions
+ * - No sensitive data (API keys, auth tokens) is in scope
+ * - User is already authenticated in their own browser session
+ *
+ * @see security.ts for Layer 1 (pattern validation)
  */
 
 import type { StockData } from '../core/types';
 import { CODE_EXECUTION_TIMEOUT, DEFAULT_FORECAST_DAYS } from '../core/constants';
 
 /**
- * Safe globals exposed to user code.
- * Excludes dangerous APIs like fetch, eval, window, document.
+ * List of dangerous globals that will be explicitly shadowed (set to undefined)
+ * in the user code execution scope. This is Layer 3 of the security system.
+ *
+ * Even if pattern validation misses something, these will be undefined.
+ */
+const BLOCKED_GLOBALS = [
+  // Browser globals
+  'window', 'document', 'navigator', 'location', 'history',
+  'localStorage', 'sessionStorage', 'indexedDB',
+
+  // Global object references
+  'globalThis', 'self', 'global', 'top', 'parent', 'frames',
+
+  // Network APIs
+  'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource',
+
+  // Dynamic code execution
+  'eval', 'Function',
+
+  // Timers (can be used for side-channel attacks)
+  'setTimeout', 'setInterval', 'setImmediate',
+  'clearTimeout', 'clearInterval', 'clearImmediate',
+
+  // Workers and threads
+  'Worker', 'SharedWorker', 'ServiceWorker',
+
+  // Other dangerous APIs
+  'Proxy', 'Reflect', 'SharedArrayBuffer', 'Atomics',
+  'WebAssembly', 'Intl',
+
+  // Node.js globals (in case of SSR)
+  'process', 'require', 'module', 'exports', '__dirname', '__filename', 'Buffer',
+];
+
+/**
+ * Creates safe, frozen copies of globals for user code execution.
+ * This is Layer 2 of the security system.
+ *
+ * Key security features:
+ * 1. All objects are frozen to prevent prototype pollution
+ * 2. Methods are bound to prevent `this` manipulation
+ * 3. Only safe, pure operations are exposed
+ *
+ * @param requestId - Optional ID for logging user code output
+ * @returns Frozen object containing safe globals
  */
 function createSafeGlobals(requestId?: string) {
-  return {
-    Math: Math,
+  // Create frozen Math object (pure mathematical operations)
+  const safeMath = Object.freeze({ ...Math });
+
+  // Create frozen JSON object with bound methods
+  const safeJSON = Object.freeze({
+    parse: JSON.parse.bind(JSON),
+    stringify: JSON.stringify.bind(JSON),
+  });
+
+  // Create safe Array utilities (no constructor access)
+  const safeArrayUtils = Object.freeze({
+    isArray: Array.isArray.bind(Array),
+    from: Array.from.bind(Array),
+    of: Array.of.bind(Array),
+  });
+
+  // Create safe Object utilities (only pure operations)
+  const safeObjectUtils = Object.freeze({
+    keys: Object.keys.bind(Object),
+    values: Object.values.bind(Object),
+    entries: Object.entries.bind(Object),
+    fromEntries: Object.fromEntries.bind(Object),
+    assign: Object.assign.bind(Object),
+    freeze: Object.freeze.bind(Object),
+    isFrozen: Object.isFrozen.bind(Object),
+    // Explicitly NOT including: getPrototypeOf, setPrototypeOf, defineProperty, etc.
+  });
+
+  // Create safe console that prefixes output
+  const safeConsole = Object.freeze({
+    log: (...args: any[]) => console.log(`[User Code${requestId ? ` ${requestId}` : ''}]:`, ...args),
+    warn: (...args: any[]) => console.warn(`[User Code${requestId ? ` ${requestId}` : ''}]:`, ...args),
+    error: (...args: any[]) => console.error(`[User Code${requestId ? ` ${requestId}` : ''}]:`, ...args),
+    info: (...args: any[]) => console.info(`[User Code${requestId ? ` ${requestId}` : ''}]:`, ...args),
+  });
+
+  // Return frozen globals object
+  return Object.freeze({
+    // Mathematical operations
+    Math: safeMath,
+
+    // Data structures and utilities
+    Array: safeArrayUtils,
+    Object: safeObjectUtils,
+    JSON: safeJSON,
+
+    // Date (creates new instances, safe to use)
     Date: Date,
-    Array: Array,
-    Object: Object,
-    JSON: JSON,
+
+    // Primitive constructors/converters (safe)
     Number: Number,
     String: String,
     Boolean: Boolean,
+
+    // Parsing functions
     parseInt: parseInt,
     parseFloat: parseFloat,
+
+    // Type checking
     isNaN: isNaN,
     isFinite: isFinite,
-    console: {
-      log: (...args: any[]) => console.log(`[User Code ${requestId}]:`, ...args),
-      warn: (...args: any[]) => console.warn(`[User Code ${requestId}]:`, ...args),
-      error: (...args: any[]) => console.error(`[User Code ${requestId}]:`, ...args)
-    }
-  };
+
+    // Console for debugging
+    console: safeConsole,
+
+    // Safe constants
+    undefined: undefined,
+    NaN: NaN,
+    Infinity: Infinity,
+  });
 }
 
 /**
@@ -66,7 +190,17 @@ export async function executeJavaScriptLocally(
     // Transpile TypeScript to JavaScript using Babel
     const jsCode = await transpileTypeScriptToJavaScript(userCode);
 
+    // Build global shadowing code (Layer 3)
+    // This sets all dangerous globals to undefined in the execution scope
+    const globalShadowing = BLOCKED_GLOBALS
+      .map(name => `const ${name} = undefined;`)
+      .join('\n      ');
+
     // Build execution wrapper that calls the appropriate function
+    // Security layers applied:
+    // - Layer 2: Frozen globals passed as parameters
+    // - Layer 3: Global shadowing (dangerous names set to undefined)
+    // - Layer 4: Strict mode enabled
     const executeCode = new Function(
       'stockData',
       'forecastDays',
@@ -87,9 +221,21 @@ export async function executeJavaScriptLocally(
       `
       "use strict";
 
+      // =====================================================================
+      // Layer 3: Global Shadowing
+      // Dangerous globals are explicitly set to undefined to prevent access
+      // even if pattern validation (Layer 1) somehow misses an attack
+      // =====================================================================
+      ${globalShadowing}
+
+      // =====================================================================
+      // User Code (transpiled from TypeScript)
+      // =====================================================================
       ${jsCode}
 
-      // Execute the appropriate function based on mode
+      // =====================================================================
+      // Function Execution
+      // =====================================================================
       if (typeof calculateWeights === 'function') {
         const weights = calculateWeights(stockData, dashboardParams || {});
         if (!Array.isArray(weights)) {

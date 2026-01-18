@@ -1,6 +1,85 @@
 /**
  * Security validation for user prompts and generated code.
  * Blocks prompt injection, behavior modification attempts, and dangerous code patterns.
+ *
+ * ## Security Architecture (Multi-Layer Defense)
+ *
+ * This module implements Layer 1 of a multi-layer security system:
+ *
+ * ### Layer 1: Pattern-Based Validation (this file)
+ * - Regex patterns to detect dangerous code constructs
+ * - Blocks: eval, Function constructor, prototype access, network calls, etc.
+ * - Blocks obfuscation techniques: unicode escapes, fromCharCode, base64
+ *
+ * ### Layer 2: Frozen Globals (code-sandbox.ts)
+ * - All exposed globals are frozen to prevent prototype pollution
+ * - Limited API surface: only Math, Date, Array methods, etc.
+ *
+ * ### Layer 3: Global Shadowing (code-sandbox.ts)
+ * - Dangerous globals explicitly set to undefined in execution scope
+ * - Prevents access even if somehow referenced
+ *
+ * ### Layer 4: Strict Mode
+ * - "use strict" prevents `this` from leaking global object
+ * - Prevents undeclared variable access
+ *
+ * ## Test Cases for Security Validation
+ *
+ * The following attacks should be BLOCKED:
+ *
+ * ```javascript
+ * // 1. Prototype chain escape
+ * [].constructor.constructor('return this')()
+ * // BLOCKED by: /\.constructor\b/i
+ *
+ * // 2. Proto access
+ * obj.__proto__.polluted = true
+ * // BLOCKED by: /\.__proto__\b/i
+ *
+ * // 3. Unicode obfuscation
+ * \u0065val('malicious')
+ * // BLOCKED by: /\\u[0-9a-fA-F]{4}/
+ *
+ * // 4. String construction
+ * String.fromCharCode(101,118,97,108)
+ * // BLOCKED by: /String\.fromCharCode/i
+ *
+ * // 5. Bracket notation for dangerous props
+ * obj['constructor']
+ * // BLOCKED by: /\[\s*['"`]constructor['"`]\s*\]/i
+ *
+ * // 6. Global object access
+ * globalThis.fetch(...)
+ * // BLOCKED by: /\bglobalThis\b/i
+ *
+ * // 7. Network requests
+ * fetch('/api/secrets')
+ * // BLOCKED by: /fetch\s*\(/i
+ *
+ * // 8. Dynamic code execution
+ * eval('malicious')
+ * new Function('return this')()
+ * // BLOCKED by: /\beval\s*\(/i, /new\s+Function\s*\(/i
+ * ```
+ *
+ * The following LEGITIMATE code should be ALLOWED:
+ *
+ * ```javascript
+ * // Math operations
+ * const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
+ * const std = Math.sqrt(variance);
+ *
+ * // Array methods
+ * const sorted = [...data].sort((a, b) => b.return - a.return);
+ * const filtered = stocks.filter(s => s.volume > 1000000);
+ *
+ * // Object operations
+ * const weights = Object.fromEntries(tickers.map((t, i) => [t, values[i]]));
+ *
+ * // Date operations
+ * const today = new Date();
+ * const dayOfWeek = today.getDay();
+ * ```
  */
 
 // ============================================================================
@@ -70,42 +149,119 @@ const BEHAVIOR_MODIFICATION_PATTERNS = [
   /you\s+are\s+now/i,
 ];
 
-/** Dangerous code patterns that could execute harmful operations */
+/**
+ * Dangerous code patterns that could execute harmful operations.
+ *
+ * These patterns are organized into categories for clarity.
+ * Each pattern blocks a specific attack vector.
+ */
 const DANGEROUS_CODE_PATTERNS = [
-  // Code execution and eval
-  /\beval\s*\(/i,
-  /new\s+Function\s*\(/i,
-  /Function\s*\(/i,
-  /setTimeout\s*\(/i,
-  /setInterval\s*\(/i,
+  // =========================================================================
+  // CATEGORY 1: Dynamic Code Execution
+  // Blocks attempts to execute arbitrary code at runtime
+  // =========================================================================
+  /\beval\s*\(/i,                    // eval('code')
+  /new\s+Function\s*\(/i,            // new Function('code')
+  /Function\s*\(/i,                  // Function('code')
+  /setTimeout\s*\([^,]*[`'"]/i,      // setTimeout('code', ...) with string
+  /setInterval\s*\([^,]*[`'"]/i,     // setInterval('code', ...) with string
 
-  // DOM and browser access
-  /document\./i,
-  /window\./i,
-  /navigator\./i,
-  /location\./i,
-  /history\./i,
+  // =========================================================================
+  // CATEGORY 2: DOM and Browser Access
+  // Blocks access to browser APIs that could manipulate the page
+  // =========================================================================
+  /\bdocument\b/i,                   // document.anything
+  /\bwindow\b/i,                     // window.anything
+  /\bnavigator\b/i,                  // navigator.anything
+  /\blocation\b/i,                   // location.href, etc.
+  /\bhistory\b/i,                    // history.pushState, etc.
 
-  // Storage access
-  /localStorage/i,
-  /sessionStorage/i,
-  /cookie/i,
-  /indexedDB/i,
+  // =========================================================================
+  // CATEGORY 3: Storage Access
+  // Blocks access to persistent storage mechanisms
+  // =========================================================================
+  /localStorage/i,                   // localStorage.getItem, etc.
+  /sessionStorage/i,                 // sessionStorage.getItem, etc.
+  /\bcookie\b/i,                     // document.cookie
+  /indexedDB/i,                      // IndexedDB access
 
-  // Network access
-  /fetch\s*\(/i,
-  /XMLHttpRequest/i,
-  /WebSocket/i,
-  /axios\./i,
+  // =========================================================================
+  // CATEGORY 4: Network Access
+  // Blocks attempts to make network requests
+  // =========================================================================
+  /\bfetch\s*\(/i,                   // fetch('url')
+  /XMLHttpRequest/i,                 // new XMLHttpRequest()
+  /WebSocket/i,                      // new WebSocket()
+  /\baxios\b/i,                      // axios.get, etc.
+  /\bRequest\s*\(/i,                 // new Request()
 
-  // System/process access
-  /require\s*\(/i,
-  /import\s*\(/i,
-  /process\./i,
-  /fs\./i,
-  /child_process/i,
-  /exec\s*\(/i,
-  /spawn\s*\(/i,
+  // =========================================================================
+  // CATEGORY 5: Node.js / System Access
+  // Blocks server-side and system-level operations
+  // =========================================================================
+  /\brequire\s*\(/i,                 // require('module')
+  /\bimport\s*\(/i,                  // import('module')
+  /\bprocess\b/i,                    // process.env, etc.
+  /\bfs\b/i,                         // fs.readFile, etc.
+  /child_process/i,                  // child_process.exec
+  /\bexec\s*\(/i,                    // exec('command')
+  /\bspawn\s*\(/i,                   // spawn('command')
+
+  // =========================================================================
+  // CATEGORY 6: Prototype Chain Escape (CRITICAL)
+  // Blocks attempts to access global object via prototype chain
+  // Example attack: [].constructor.constructor('return this')()
+  // =========================================================================
+  /\.constructor\b/i,                // obj.constructor
+  /\.__proto__\b/i,                  // obj.__proto__
+  /\["constructor"\]/i,              // obj["constructor"]
+  /\['constructor'\]/i,              // obj['constructor']
+  /\[`constructor`\]/i,              // obj[`constructor`]
+  /\["__proto__"\]/i,                // obj["__proto__"]
+  /\['__proto__'\]/i,                // obj['__proto__']
+  /Object\.getPrototypeOf/i,         // Object.getPrototypeOf(obj)
+  /Object\.setPrototypeOf/i,         // Object.setPrototypeOf(obj, proto)
+  /Object\.getOwnPropertyDescriptor/i, // Can access getters
+  /Object\.defineProperty/i,         // Can define malicious properties
+  /\bReflect\b/i,                    // Reflect.get, Reflect.construct, etc.
+
+  // =========================================================================
+  // CATEGORY 7: Global Object Access
+  // Blocks direct access to global scope
+  // =========================================================================
+  /\bglobalThis\b/i,                 // globalThis.fetch
+  /\bself\b/i,                       // self.fetch (web worker global)
+  /\bglobal\b/i,                     // global.process (Node.js)
+
+  // =========================================================================
+  // CATEGORY 8: Additional Dangerous APIs
+  // Blocks other potentially dangerous browser/runtime APIs
+  // =========================================================================
+  /\bWorker\s*\(/i,                  // new Worker() - can run code in thread
+  /SharedArrayBuffer/i,              // Can be used for timing attacks
+  /\bProxy\s*\(/i,                   // new Proxy() - can intercept operations
+  /\bDebugger\b/i,                   // debugger statement
+  /\bwith\s*\(/i,                    // with statement - scope manipulation
+
+  // =========================================================================
+  // CATEGORY 9: Obfuscation Detection
+  // Blocks common techniques used to hide malicious code
+  // =========================================================================
+
+  // Unicode escapes (e.g., \u0065val for "eval")
+  /\\u[0-9a-fA-F]{4}/,
+
+  // Character code construction
+  /String\.fromCharCode/i,           // String.fromCharCode(101,118,97,108)
+  /String\.fromCodePoint/i,          // String.fromCodePoint(...)
+
+  // Base64 encoding (can hide malicious strings)
+  /\batob\s*\(/i,                    // atob('base64')
+  /\bbtoa\s*\(/i,                    // btoa('string')
+
+  // Bracket notation for sensitive property names
+  // This catches obj['eval'], obj['constructor'], etc.
+  /\[\s*['"`](?:eval|constructor|__proto__|prototype|window|document|fetch|globalThis|Function|setTimeout|setInterval)['"`]\s*\]/i,
 ];
 
 /** Financial keywords that indicate legitimate portfolio strategy requests */
