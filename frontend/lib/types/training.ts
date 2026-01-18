@@ -1,3 +1,4 @@
+// Database row structure (with storage URLs instead of raw data)
 export interface TrainingLog {
   id: string;
   user_id: string;
@@ -6,11 +7,17 @@ export interface TrainingLog {
   stocks: string[];
   model: string;
   parameters: Record<string, any>;
-  results: ForecastResult | BacktestResult;
-  charts?: ChartConfig[];
+  results_url?: string;  // Path to results JSON in Supabase Storage
+  charts_url?: string;   // Path to charts JSON in Supabase Storage
   metrics?: BacktestMetrics;
   status: 'completed' | 'failed' | 'in_progress';
   created_at: string;
+}
+
+// Hydrated log with actual data loaded from storage
+export interface HydratedTrainingLog extends Omit<TrainingLog, 'results_url' | 'charts_url'> {
+  results: ForecastResult | BacktestResult;
+  charts?: ChartConfig[];
 }
 
 export interface ForecastResult {
@@ -55,12 +62,13 @@ export interface ChartConfig {
   options?: Record<string, any>;
 }
 
+// Input data for creating a training log (with actual data, will be uploaded to storage)
 export interface CreateTrainingLogData {
   type: 'forecast' | 'backtest';
   stocks: string[];
   model: string;
   parameters: Record<string, any>;
   results: ForecastResult | BacktestResult;
-  charts?: ChartConfig[];
-  metrics?: BacktestMetrics;
+  charts?: ChartConfig[] | Record<string, any> | null;  // Flexible chart data format
+  metrics?: BacktestMetrics | Record<string, any> | null;
 }

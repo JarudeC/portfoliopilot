@@ -5,14 +5,13 @@ import { useAuth } from '@/contexts/AuthContexts'
 import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
-import LogList from './components/LogList'
-import LogFilters from './components/LogFilters'
-import { TrainingLog } from '@/lib/types/training'
+import { LogList, LogFilters } from '@/components/history'
+import { HydratedTrainingLog } from '@/lib/types/training'
 
 export default function HistoryPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
-  const [logs, setLogs] = useState<TrainingLog[]>([])
+  const [logs, setLogs] = useState<HydratedTrainingLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filters, setFilters] = useState({
@@ -63,8 +62,8 @@ export default function HistoryPage() {
       } else {
         // Filter out any logs that already exist to prevent duplicates
         setLogs(prev => {
-          const existingIds = new Set(prev.map(log => log.id))
-          const newLogs = data.logs.filter(log => !existingIds.has(log.id))
+          const existingIds = new Set(prev.map((log: HydratedTrainingLog) => log.id))
+          const newLogs = data.logs.filter((log: HydratedTrainingLog) => !existingIds.has(log.id))
           return [...prev, ...newLogs]
         })
       }

@@ -38,18 +38,19 @@ export async function POST(
         // Ensure we have a valid model name
         const modelName = data.algo || originalParams?.algo || 'CUSTOM_AI_STRATEGY';
         
+        const navValues = Object.values(data.nav || {}) as number[];
         const logData = {
           type: 'backtest' as const,
-          stocks: stocks,
-          model: modelName,
+          stocks: stocks as string[],
+          model: modelName as string,
           parameters: {
             job_id: id,
             ...(originalParams || {}),
             weights: data.weights
           },
           results: {
-            returns: data.returns || [],
-            cumulative_returns: Object.values(data.nav || {}),
+            returns: (data.returns || []) as number[],
+            cumulative_returns: navValues,
             dates: Object.keys(data.nav || {}),
             trades: data.trades || [],
             weights: data.weights
@@ -58,12 +59,15 @@ export async function POST(
             nav: data.nav || {},
             equity_curve: Object.keys(data.nav || {}).map((date, i) => ({
               date,
-              value: Object.values(data.nav || {})[i]
+              value: navValues[i]
             }))
           },
           metrics: data.metrics || null
         };
-        
+
+        if (!user) {
+          return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+        }
         const result = await logService.createLog(logData, user.id);
         
         console.log('Successfully logged Claude backtest result:', { 
@@ -124,7 +128,9 @@ export async function GET(
         );
       }
 
-      return NextResponse.json(log);
+      // Hydrate log to load results and charts from storage
+      const hydratedLog = await logService.hydrateLog(log);
+      return NextResponse.json(hydratedLog);
     }
 
     // Handle Claude backtest logging (special case for claude-* IDs)
@@ -186,10 +192,11 @@ export async function GET(
           return NextResponse.json(data, { status: r.status });
         }
         
+        const backtestNavValues = Object.values(data.nav || {}) as number[];
         const logData = {
-          type: (isForecast ? 'forecast' : 'backtest') as const,
-          stocks: stocks,
-          model: modelName,
+          type: (isForecast ? 'forecast' : 'backtest') as 'forecast' | 'backtest',
+          stocks: stocks as string[],
+          model: modelName as string,
           parameters: {
             job_id: id,
             ...(originalParams || {}),
@@ -200,8 +207,8 @@ export async function GET(
           results: isForecast ? {
             predictions: data.predictions || []
           } : {
-            returns: data.returns || [],
-            cumulative_returns: Object.values(data.nav || {}),
+            returns: (data.returns || []) as number[],
+            cumulative_returns: backtestNavValues,
             dates: Object.keys(data.nav || {}),
             trades: data.trades || [],
             weights: data.weights
@@ -210,13 +217,12 @@ export async function GET(
             nav: data.nav || {},
             equity_curve: Object.keys(data.nav || {}).map((date, i) => ({
               date,
-              value: Object.values(data.nav || {})[i]
+              value: backtestNavValues[i]
             }))
           },
           metrics: data.metrics || null
         };
-        
-        
+
         await logService.createLog(logData, user.id);
         
         // Remove cached parameters and cleanup
@@ -228,7 +234,9 @@ export async function GET(
         console.log('Successfully logged training result:', { type: logData.type, model: modelName, job_id: id });
       } catch (logError) {
         console.error('Failed to log completed training:', logError);
-        console.error('Error stack:', logError.stack);
+        if (logError instanceof Error) {
+          console.error('Error stack:', logError.stack);
+        }
         // Continue on logging failure
       }
     } else {

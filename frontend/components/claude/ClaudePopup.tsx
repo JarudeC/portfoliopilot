@@ -4,6 +4,8 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import { generateCodeOnly, executeUserCode, type GenerationResult, type StockData } from "../../lib/claude";
 import CodeEditor from './CodeEditor';
+import LoadStrategyModal from './LoadStrategyModal';
+import type { HydratedStrategy } from '@/lib/types/strategy';
 
 /**
  * Extract user-friendly error message from any error.
@@ -135,6 +137,10 @@ Press Ctrl+Enter to generate, Esc to close`;
   const [showCodeReview, setShowCodeReview] = useState<boolean>(false);
   const [executingCode, setExecutingCode] = useState<boolean>(false);
 
+  // Loaded strategy state (for save/update flow)
+  const [loadedStrategy, setLoadedStrategy] = useState<HydratedStrategy | null>(null);
+  const [showLoadModal, setShowLoadModal] = useState<boolean>(false);
+
   // API key status
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   const [checkingApiKey, setCheckingApiKey] = useState<boolean>(true);
@@ -229,13 +235,18 @@ Press Ctrl+Enter to generate, Esc to close`;
       
       const result = await executeUserCode(
         editedCode,
-        mode, 
+        mode,
         stockData,
         undefined,
         mode === 'forecast' ? dashboardParams.forecastDays : undefined,
         dashboardParams
       );
-      
+
+      // Add flag if this was loaded from saved strategies
+      if (loadedStrategy) {
+        result.loadedFromSaved = true;
+      }
+
       // Update state with results
       setLastResult(result);
       setShowCodeReview(false);
@@ -258,7 +269,7 @@ Press Ctrl+Enter to generate, Esc to close`;
     } finally {
       setExecutingCode(false);
     }
-  }, [stockData, executingCode, onStrategyGenerated, onError, mode, dashboardParams]);
+  }, [stockData, executingCode, onStrategyGenerated, onError, mode, dashboardParams, loadedStrategy]);
 
   // Handle code rejection
   const handleCodeRejection = useCallback(() => {
@@ -274,6 +285,7 @@ Press Ctrl+Enter to generate, Esc to close`;
     setLastResult(null);
     setGeneratedCode(null);
     setShowCodeReview(false);
+    setLoadedStrategy(null);
     textareaRef.current?.focus();
   }, []);
 
@@ -282,9 +294,20 @@ Press Ctrl+Enter to generate, Esc to close`;
     const randomExample = examples[Math.floor(Math.random() * examples.length)];
     setUserDescription(randomExample);
     setValidationError(null);
+    setLoadedStrategy(null);
     if (error) setError(null);
     textareaRef.current?.focus();
   }, [error, examples]);
+
+  // Load a saved strategy
+  const handleLoadStrategy = useCallback((strategy: HydratedStrategy) => {
+    setLoadedStrategy(strategy);
+    setUserDescription(strategy.description || strategy.name);
+    setGeneratedCode(strategy.code);
+    setShowCodeReview(true);
+    setValidationError(null);
+    if (error) setError(null);
+  }, [error]);
 
   // Handle close popup
   const handleClose = useCallback(() => {
@@ -478,6 +501,9 @@ Press Ctrl+Enter to generate, Esc to close`;
             onReject={handleCodeRejection}
             mode={mode}
             loading={executingCode}
+            strategyDescription={userDescription}
+            loadedStrategy={loadedStrategy}
+            onStrategySaved={() => setLoadedStrategy(null)}
           />
         </div>
       </div>
@@ -518,14 +544,24 @@ Press Ctrl+Enter to generate, Esc to close`;
               <label htmlFor="strategy-description" className="block text-sm font-medium text-gray-300">
                 Algorithm Description
               </label>
-              <button
-                type="button"
-                onClick={handleUseExample}
-                disabled={loading}
-                className="text-xs text-[#4CC9F0] hover:text-[#4CC9F0]/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Use Example
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowLoadModal(true)}
+                  disabled={loading}
+                  className="text-xs text-[#4CC9F0] hover:text-[#4CC9F0]/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Load Saved
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUseExample}
+                  disabled={loading}
+                  className="text-xs text-[#4CC9F0] hover:text-[#4CC9F0]/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Use Example
+                </button>
+              </div>
             </div>
 
             <div className="relative">
@@ -655,6 +691,14 @@ Press Ctrl+Enter to generate, Esc to close`;
           </div>
         </div>
       </div>
+
+      {/* Load Strategy Modal */}
+      <LoadStrategyModal
+        isOpen={showLoadModal}
+        onClose={() => setShowLoadModal(false)}
+        onSelect={handleLoadStrategy}
+        mode={mode}
+      />
     </div>
   );
 }

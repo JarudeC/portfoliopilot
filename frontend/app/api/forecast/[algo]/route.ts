@@ -60,11 +60,13 @@ export async function POST(
     return NextResponse.json(data, { status: r.status });
   } catch (error) {
     console.error('Forecast API: Request failed with error:', error);
-    console.error('Forecast API: Error details:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
-    });
+    if (error instanceof Error) {
+      console.error('Forecast API: Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+    }
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

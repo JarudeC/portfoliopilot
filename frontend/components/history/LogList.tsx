@@ -1,12 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { TrainingLog } from '@/lib/types/training'
+import { HydratedTrainingLog } from '@/lib/types/training'
 import LogItem from './LogItem'
-import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal'
+import DeleteConfirmModal from '@/components/ui/DeleteConfirmModal'
 
 interface LogListProps {
-  logs: TrainingLog[]
+  logs: HydratedTrainingLog[]
   loading: boolean
   hasMore: boolean
   onLoadMore: () => void

@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       await Promise.all(verificationPromises);
     } catch (error) {
       return NextResponse.json(
-        { error: error.message },
+        { error: error instanceof Error ? error.message : 'Access denied' },
         { status: 403 }
       );
     }

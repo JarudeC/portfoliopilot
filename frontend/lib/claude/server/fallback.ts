@@ -104,8 +104,13 @@ export function executeWithTimeout(
           return;
         }
 
-        // Return raw weights - normalization happens in dashboard if needed
-        resolve({ success: true, result: weights, timeout: false });
+        // Normalize weights to sum to 1.0 (safety net in case AI didn't normalize)
+        const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+        const normalizedWeights = totalWeight > 0
+          ? weights.map(w => w / totalWeight)
+          : new Array(weights.length).fill(1.0 / weights.length);
+
+        resolve({ success: true, result: normalizedWeights, timeout: false });
       }
 
     } catch (error) {

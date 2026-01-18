@@ -47,7 +47,7 @@ export default function Navbar() {
 
   const getUserInitials = () => {
     const displayName = getUserDisplayName();
-    return displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    return displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
   return (
@@ -72,9 +72,14 @@ export default function Navbar() {
           </Link>
           
           {user && (
-            <Link href="/history" className={navLink}>
-              History
-            </Link>
+            <>
+              <Link href="/history" className={navLink}>
+                History
+              </Link>
+              <Link href="/strategies" className={navLink}>
+                Strategies
+              </Link>
+            </>
           )}
 
           {loading ? (
@@ -183,9 +188,14 @@ export default function Navbar() {
           </Link>
           
           {user && (
-            <Link href="/history" className={navLink} onClick={() => setOpen(false)}>
-              History
-            </Link>
+            <>
+              <Link href="/history" className={navLink} onClick={() => setOpen(false)}>
+                History
+              </Link>
+              <Link href="/strategies" className={navLink} onClick={() => setOpen(false)}>
+                Strategies
+              </Link>
+            </>
           )}
 
           {loading ? (

@@ -5,6 +5,7 @@
 "use client";
 
 import { useState } from "react";
+import { Settings } from "lucide-react";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 import { ForecastChart, PortfolioPieChart, MetricsTable } from "../../components/charts";
@@ -172,11 +173,22 @@ export default function Dashboard() {
           </div>
 
           <Filter label="Forecast Model">
-            <Select
-              value={forecast.algo}
-              onChange={forecast.handleAlgoChange}
-              options={FORECAST_ALGOS}
-            />
+            <div className="flex items-center gap-2">
+              <Select
+                value={forecast.algo}
+                onChange={forecast.handleAlgoChange}
+                options={FORECAST_ALGOS}
+              />
+              {forecast.algo === "Custom AI Strategy" && (
+                <button
+                  onClick={forecast.openPopup}
+                  className="p-2 text-[#4CC9F0] hover:bg-[#4CC9F0]/10 rounded-lg transition-colors"
+                  title="Configure AI Strategy"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </Filter>
 
           <button
@@ -293,11 +305,22 @@ export default function Dashboard() {
           </div>
 
           <Filter label="Back-test Model">
-            <Select
-              value={backtest.btAlgo}
-              onChange={backtest.handleAlgoChange}
-              options={BACKTEST_ALGOS}
-            />
+            <div className="flex items-center gap-2">
+              <Select
+                value={backtest.btAlgo}
+                onChange={backtest.handleAlgoChange}
+                options={BACKTEST_ALGOS}
+              />
+              {backtest.btAlgo === "Custom AI Strategy" && (
+                <button
+                  onClick={backtest.openPopup}
+                  className="p-2 text-[#4CC9F0] hover:bg-[#4CC9F0]/10 rounded-lg transition-colors"
+                  title="Configure AI Strategy"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </Filter>
 
           <button

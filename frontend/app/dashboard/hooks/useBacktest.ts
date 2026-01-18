@@ -34,6 +34,7 @@ export interface UseBacktestReturn {
   results: BacktestResults;
   claudeStrategy: GenerationResult | null;
   showPopup: boolean;
+  openPopup: () => void;
   runBacktest: (tickers: string[]) => Promise<void>;
   handleAlgoChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
   handleClaudeGenerated: (result: GenerationResult) => void;
@@ -97,6 +98,11 @@ export function useBacktest(): UseBacktestReturn {
         "Backtest Strategy Generated (Fallback)",
         `Strategy generated using fallback method: ${result.error || 'AI generation failed'}`
       );
+    } else if (result.loadedFromSaved) {
+      showSuccess(
+        "Backtest Strategy Loaded",
+        "Your saved backtest strategy has been loaded and is ready to use."
+      );
     } else {
       showSuccess(
         "Backtest Strategy Generated",
@@ -129,6 +135,13 @@ export function useBacktest(): UseBacktestReturn {
       setBtAlgo(prevAlgo);
     }
   }, [claudeStrategy, prevAlgo]);
+
+  /**
+   * Open the Claude popup manually (for reconfiguring existing strategy).
+   */
+  const openPopup = useCallback(() => {
+    setShowPopup(true);
+  }, []);
 
   const resetParams = useCallback(() => {
     setParams(DEFAULT_PARAMS);
@@ -501,6 +514,7 @@ export function useBacktest(): UseBacktestReturn {
     results,
     claudeStrategy,
     showPopup,
+    openPopup,
     runBacktest,
     handleAlgoChange,
     handleClaudeGenerated,

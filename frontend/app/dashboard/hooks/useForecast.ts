@@ -34,6 +34,7 @@ export interface UseForecastReturn {
   overallMetricsLoading: boolean;
   claudeStrategy: GenerationResult | null;
   showPopup: boolean;
+  openPopup: () => void;
   runForecast: (tickers: string[]) => Promise<void>;
   handleAlgoChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
   handleClaudeGenerated: (result: GenerationResult) => void;
@@ -94,6 +95,11 @@ export function useForecast(): UseForecastReturn {
         "Forecast Strategy Generated (Fallback)",
         `Strategy generated using fallback method: ${result.error || 'AI generation failed'}`
       );
+    } else if (result.loadedFromSaved) {
+      showSuccess(
+        "Forecast Strategy Loaded",
+        "Your saved forecast strategy has been loaded and is ready to use."
+      );
     } else {
       showSuccess(
         "Forecast Strategy Generated",
@@ -126,6 +132,13 @@ export function useForecast(): UseForecastReturn {
       setAlgo(prevAlgo);
     }
   }, [claudeStrategy, prevAlgo]);
+
+  /**
+   * Open the Claude popup manually (for reconfiguring existing strategy).
+   */
+  const openPopup = useCallback(() => {
+    setShowPopup(true);
+  }, []);
 
   const resetParams = useCallback(() => {
     setParams(DEFAULT_PARAMS);
@@ -459,6 +472,7 @@ export function useForecast(): UseForecastReturn {
     overallMetricsLoading,
     claudeStrategy,
     showPopup,
+    openPopup,
     runForecast,
     handleAlgoChange,
     handleClaudeGenerated,

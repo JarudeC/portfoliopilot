@@ -1,12 +1,12 @@
 'use client'
 
-import { TrainingLog, BacktestResult, ForecastResult } from '@/lib/types/training'
+import { HydratedTrainingLog, BacktestResult, ForecastResult } from '@/lib/types/training'
 import ForecastChart from '@/components/charts/ForecastChart'
 import EquityChart from '@/components/charts/EquityChart'
 import PortfolioPieChart from '@/components/charts/PortfolioPieChart'
 
 interface LogChartsProps {
-  log: TrainingLog
+  log: HydratedTrainingLog
   chartType?: 'pie' | 'equity' | 'forecast' | 'all'
 }
 

@@ -9,7 +9,8 @@ export async function GET(req: NextRequest) {
 
     // Rate limiting check (simple in-memory implementation)
     const userAgent = req.headers.get('user-agent') || 'unknown';
-    const clientId = req.ip || userAgent;
+    const forwardedFor = req.headers.get('x-forwarded-for');
+    const clientId = forwardedFor?.split(',')[0]?.trim() || userAgent;
     
     if (!checkRateLimit(clientId, 'history', 60, 100)) {
       return NextResponse.json(
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0');
 
     const logService = new TrainingLogService(true);
-    
+
     let logs;
     if (type) {
       logs = await logService.getLogsByType(type, limit);
@@ -32,7 +33,10 @@ export async function GET(req: NextRequest) {
       logs = await logService.getUserLogs(user.id, limit, offset);
     }
 
-    return NextResponse.json({ logs: logs || [] });
+    // Hydrate logs to load results and charts from storage
+    const hydratedLogs = await logService.hydrateLogs(logs || []);
+
+    return NextResponse.json({ logs: hydratedLogs });
   } catch (error) {
     console.error('Failed to fetch training history:', error);
     

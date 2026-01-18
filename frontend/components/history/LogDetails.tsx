@@ -1,12 +1,12 @@
 // Detailed view component for individual training log records
 'use client'
 
-import { TrainingLog, BacktestResult, ForecastResult, BacktestMetrics } from '@/lib/types/training'
+import { HydratedTrainingLog } from '@/lib/types/training'
 import LogCharts from './LogCharts'
-import { MetricsTable, EquityChart, PortfolioPieChart, ForecastChart } from '@/components/charts'
+import { MetricsTable, ForecastChart } from '@/components/charts'
 
 interface LogDetailsProps {
-  log: TrainingLog
+  log: HydratedTrainingLog
 }
 
 export default function LogDetails({ log }: LogDetailsProps) {
@@ -37,39 +37,46 @@ export default function LogDetails({ log }: LogDetailsProps) {
 
   const renderBacktestMetrics = () => {
     if (log.type !== 'backtest') return null
-    
+
     // Check if metrics exist, otherwise try to calculate basic metrics from results
-    let metrics = log.metrics
-    
-    // If no metrics but we have results, try to calculate basic metrics
-    if (!metrics && log.results) {
-      const results = log.results as any
+    let displayMetrics: Record<string, string | number> = {}
+
+    if (log.metrics) {
+      // Convert BacktestMetrics to display format
+      const m = log.metrics as unknown as Record<string, number>
+      displayMetrics = Object.entries(m).reduce((acc, [key, value]) => {
+        acc[key] = typeof value === 'number' ? value.toFixed(2) : value
+        return acc
+      }, {} as Record<string, string | number>)
+    } else if (log.results) {
+      // If no metrics but we have results, try to calculate basic metrics
+      const results = log.results as { cumulative_returns?: number[]; returns?: number[] }
       if (results.cumulative_returns && results.cumulative_returns.length > 0) {
         const finalReturn = results.cumulative_returns[results.cumulative_returns.length - 1]
         const returns = results.returns || []
-        
+
         // Calculate basic metrics - use same format as dashboard
         const totalReturn = (finalReturn - 1) * 100 // Convert to percentage
-        const volatility = returns.length > 0 ? 
+        const volatility = returns.length > 0 ?
           Math.sqrt(returns.reduce((sum: number, r: number) => sum + r * r, 0) / returns.length) * Math.sqrt(252) * 100 : 0
         const sharpeRatio = volatility > 0 ? (totalReturn / volatility) : 0
-        
+
         // Use same keys and order as dashboard
-        metrics = {
+        displayMetrics = {
           'Return': `${totalReturn.toFixed(2)}%`,
-          'AnnualReturn': `${totalReturn.toFixed(2)}%`, // Simplified
+          'AnnualReturn': `${totalReturn.toFixed(2)}%`,
           'DailyVol': `${(volatility / Math.sqrt(252)).toFixed(2)}%`,
           'AnnualVol': `${volatility.toFixed(2)}%`,
           'Sharpe': `${sharpeRatio.toFixed(2)}`,
-          'Sortino': "0.00" // Would need more complex calculation
+          'Sortino': "0.00"
         }
       }
     }
-    
+
     return (
       <div>
         <h4 className="text-sm font-semibold mb-3 text-cyan-300">Performance Metrics</h4>
-        <MetricsTable metrics={metrics || {}} showTitle={false} />
+        <MetricsTable metrics={displayMetrics} showTitle={false} />
       </div>
     )
   }

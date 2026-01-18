@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import Editor from '@monaco-editor/react';
-import { Check, X, Edit3, Play, RotateCcw, Lock } from 'lucide-react';
+import { X, Edit3, Play, RotateCcw, Lock, Save, FolderOpen } from 'lucide-react';
+import SaveStrategyModal from './SaveStrategyModal';
+import type { HydratedStrategy } from '@/lib/types/strategy';
 
 interface CodeEditorProps {
   code: string;
@@ -10,17 +12,25 @@ interface CodeEditorProps {
   onReject: () => void;
   mode: 'forecast' | 'backtest';
   loading?: boolean;
+  strategyDescription?: string;
+  loadedStrategy?: HydratedStrategy | null;
+  onStrategySaved?: () => void;
 }
 
-export default function CodeEditor({ 
-  code, 
-  onApprove, 
-  onReject, 
+export default function CodeEditor({
+  code,
+  onApprove,
+  onReject,
   mode,
-  loading = false 
+  loading = false,
+  strategyDescription = '',
+  loadedStrategy = null,
+  onStrategySaved,
 }: CodeEditorProps) {
   const [editedCode, setEditedCode] = useState(code);
   const [isEditing, setIsEditing] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const handleApprove = () => {
     onApprove(editedCode);
@@ -31,6 +41,58 @@ export default function CodeEditor({
     setIsEditing(false);
   };
 
+  const handleSaveNew = async (name: string, description: string) => {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/strategies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          description,
+          code: editedCode,
+          mode,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to save strategy');
+      }
+
+      onStrategySaved?.();
+      setShowSaveModal(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateExisting = async (name: string, description: string) => {
+    if (!loadedStrategy) return;
+
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/strategies/${loadedStrategy.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          description,
+          code: editedCode,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update strategy');
+      }
+
+      setShowSaveModal(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const functionName = mode === 'forecast' ? 'generatePredictions' : 'calculateWeights';
 
   return (
@@ -38,11 +100,20 @@ export default function CodeEditor({
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-[#4CC9F0]/20 bg-[#14273F]">
         <div className="flex items-center gap-3">
-          <Edit3 className="w-5 h-5 text-[#4CC9F0]" />
+          {loadedStrategy ? (
+            <FolderOpen className="w-5 h-5 text-[#4CC9F0]" />
+          ) : (
+            <Edit3 className="w-5 h-5 text-[#4CC9F0]" />
+          )}
           <div>
-            <h3 className="font-semibold text-white">Generated Code Review</h3>
+            <h3 className="font-semibold text-white">
+              {loadedStrategy ? `Loaded: ${loadedStrategy.name}` : 'Generated Code Review'}
+            </h3>
             <p className="text-sm text-gray-400">
-              Review and optionally edit the generated {functionName} function
+              {loadedStrategy
+                ? 'Strategy loaded from saved strategies. Review and run or edit as needed.'
+                : `Review and optionally edit the generated ${functionName} function`
+              }
             </p>
           </div>
         </div>
@@ -113,8 +184,17 @@ export default function CodeEditor({
             </button>
           )}
         </div>
-        
+
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowSaveModal(true)}
+            disabled={loading || saving || !editedCode.trim()}
+            className="flex items-center gap-2 px-4 py-2 text-[#4CC9F0] hover:text-white border border-[#4CC9F0] hover:bg-[#4CC9F0]/10 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Save className="w-4 h-4" />
+            Save Strategy
+          </button>
+
           <button
             onClick={onReject}
             disabled={loading}
@@ -123,7 +203,7 @@ export default function CodeEditor({
             <X className="w-4 h-4" />
             Cancel
           </button>
-          
+
           <button
             onClick={handleApprove}
             disabled={loading || !editedCode.trim()}
@@ -143,6 +223,17 @@ export default function CodeEditor({
           </button>
         </div>
       </div>
+
+      {/* Save Strategy Modal */}
+      <SaveStrategyModal
+        isOpen={showSaveModal}
+        onClose={() => setShowSaveModal(false)}
+        onSave={handleSaveNew}
+        onUpdate={loadedStrategy ? handleUpdateExisting : undefined}
+        defaultDescription={strategyDescription}
+        existingStrategyName={loadedStrategy?.name}
+        loading={saving}
+      />
     </div>
   );
 }

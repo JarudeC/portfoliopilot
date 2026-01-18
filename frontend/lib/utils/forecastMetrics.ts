@@ -250,17 +250,18 @@ export async function calculateForecastMetrics(
     }
     
     // Backend APIs return absolute prices - use directly
-    const adjustedPredictions = predictions;
-    
+    let adjustedPredictions = predictions;
+    let adjustedActualPrices = actualPrices;
+
     // Ensure array lengths match for accurate calculation
-    if (adjustedPredictions.length !== actualPrices.length) {
-      const minLength = Math.min(adjustedPredictions.length, actualPrices.length);
+    if (adjustedPredictions.length !== adjustedActualPrices.length) {
+      const minLength = Math.min(adjustedPredictions.length, adjustedActualPrices.length);
       adjustedPredictions = adjustedPredictions.slice(0, minLength);
-      actualPrices = actualPrices.slice(0, minLength);
+      adjustedActualPrices = adjustedActualPrices.slice(0, minLength);
     }
     
-    const mse = calculateMSE(adjustedPredictions, actualPrices);
-    const mae = calculateMAE(adjustedPredictions, actualPrices);
+    const mse = calculateMSE(adjustedPredictions, adjustedActualPrices);
+    const mae = calculateMAE(adjustedPredictions, adjustedActualPrices);
 
 
     return { mse, mae };

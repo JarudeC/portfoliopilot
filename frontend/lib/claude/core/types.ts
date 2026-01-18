@@ -42,6 +42,8 @@ export interface GenerationResult {
   error?: string;
   /** True if AI generation failed and fallback was used */
   fallbackUsed: boolean;
+  /** True if strategy was loaded from saved strategies */
+  loadedFromSaved?: boolean;
   executionTime: number;
   securityValidation?: {
     promptValid: boolean;

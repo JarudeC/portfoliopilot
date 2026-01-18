@@ -1,12 +1,15 @@
 // Service for managing training session logs in database
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { createClient as createBrowserClient } from '@/lib/supabase/client';
-import { TrainingLog, CreateTrainingLogData } from '@/lib/types/training';
+import { TrainingLog, CreateTrainingLogData, HydratedTrainingLog, ForecastResult, BacktestResult, ChartConfig } from '@/lib/types/training';
+import { StorageService } from './storage';
 
 export class TrainingLogService {
   private supabase;
+  private storageService: StorageService;
 
   constructor(isServer = false) {
+    this.storageService = new StorageService(isServer);
     if (isServer) {
       // Server client requires async initialization
       this.supabase = null;
@@ -25,33 +28,56 @@ export class TrainingLogService {
   async createLog(data: CreateTrainingLogData, userId?: string): Promise<TrainingLog> {
     // Use admin client for server-side operations
     const supabase = createServiceRoleClient();
-    
-    
+
     let finalUserId = userId;
-    
+
     // Fallback to current user if no userId provided
     if (!finalUserId) {
       const regularSupabase = await this.getSupabaseClient();
       const { data: { user }, error: authError } = await regularSupabase.auth.getUser();
-      
+
       if (authError || !user) {
         throw new Error('Authentication required to create training log');
       }
       finalUserId = user.id;
     }
 
+    // Generate a unique ID for storage paths
+    const logId = crypto.randomUUID();
+
+    // Upload results to storage
+    const resultsUpload = await this.storageService.uploadJson(
+      finalUserId,
+      'results',
+      logId,
+      data.results
+    );
+
+    // Upload charts to storage (if provided)
+    let chartsUrl: string | undefined;
+    if (data.charts) {
+      const chartsUpload = await this.storageService.uploadJson(
+        finalUserId,
+        'charts',
+        logId,
+        data.charts
+      );
+      chartsUrl = chartsUpload.url;
+    }
+
     const insertData = {
+      id: logId,
       user_id: finalUserId,
       type: data.type,
       stocks: data.stocks,
       model: data.model,
       parameters: data.parameters,
-      results: data.results,
-      charts: data.charts,
+      results_url: resultsUpload.url,
+      charts_url: chartsUrl,
       metrics: data.metrics,
       status: 'completed'
     };
-    
+
     const { data: result, error } = await supabase
       .from('training_logs')
       .insert(insertData)
@@ -59,6 +85,12 @@ export class TrainingLogService {
       .single();
 
     if (error) {
+      // Clean up uploaded files on DB insert failure
+      await this.storageService.deleteFile(resultsUpload.url);
+      if (chartsUrl) {
+        await this.storageService.deleteFile(chartsUrl);
+      }
+
       console.error('Database insert error details:', {
         code: error.code,
         message: error.message,
@@ -69,6 +101,35 @@ export class TrainingLogService {
     }
 
     return result;
+  }
+
+  /**
+   * Hydrate a training log by loading results and charts from storage
+   */
+  async hydrateLog(log: TrainingLog): Promise<HydratedTrainingLog> {
+    const results = log.results_url
+      ? await this.storageService.downloadJson<ForecastResult | BacktestResult>(log.results_url)
+      : null;
+
+    const charts = log.charts_url
+      ? (await this.storageService.downloadJson<ChartConfig[]>(log.charts_url)) ?? undefined
+      : undefined;
+
+    // Remove URL fields and add actual data
+    const { results_url, charts_url, ...rest } = log;
+
+    return {
+      ...rest,
+      results: results || { predictions: [] }, // Fallback to empty results
+      charts,
+    };
+  }
+
+  /**
+   * Hydrate multiple training logs
+   */
+  async hydrateLogs(logs: TrainingLog[]): Promise<HydratedTrainingLog[]> {
+    return Promise.all(logs.map(log => this.hydrateLog(log)));
   }
 
   async getUserLogs(userId?: string, limit = 50, offset = 0): Promise<TrainingLog[]> {

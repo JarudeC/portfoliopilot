@@ -1,12 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { TrainingLog } from '@/lib/types/training'
+import { HydratedTrainingLog } from '@/lib/types/training'
 import LogDetails from './LogDetails'
-import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal'
+import DeleteConfirmModal from '@/components/ui/DeleteConfirmModal'
 
 interface LogItemProps {
-  log: TrainingLog
+  log: HydratedTrainingLog
   isExpanded: boolean
   onToggleExpanded: () => void
   onDelete: () => void

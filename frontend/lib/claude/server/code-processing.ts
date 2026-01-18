@@ -87,14 +87,16 @@ The function should implement this portfolio strategy: {userDescription}
 CRITICAL REQUIREMENTS:
 1. ENSURE PERFECT SYNTAX - Code must be valid JavaScript/TypeScript with no syntax errors
 2. DOUBLE-CHECK all variable names, parentheses, brackets, and semicolons
-3. DO NOT normalize weights to sum to 1 - return raw scores/weights
+3. WEIGHTS MUST BE NORMALIZED TO SUM TO 1.0 (e.g., [0.4, 0.35, 0.25] NOT [40, 35, 25])
 4. DO NOT use equal weights (1/n) as fallback under ANY circumstances EXCEPT if the user explicitly asks for it
-5. DO NOT include any code that divides by total weight sum
+5. ALWAYS normalize at the end of your function before returning
 6. Return weights that reflect your actual analysis - if one stock scores 2x higher, it should get 2x the weight
 7. Return only NON-NEGATIVE weights (>= 0). Zero weights are acceptable for poor-performing stocks
 8. DO NOT return negative weights - use 0 instead for stocks you want to avoid
-9. The system handles all scaling - your job is differentiation based on analysis
-10. VERIFY: Every variable used must be properly declared and defined
+9. VERIFY: Every variable used must be properly declared and defined
+10. REQUIRED: Include this normalization code at the end before returning:
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    return totalWeight > 0 ? weights.map(w => w / totalWeight) : weights.map(() => 1 / weights.length);
 
 Generate the calculateWeights function now:
 `;
