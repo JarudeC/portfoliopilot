@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from importlib import import_module
 from typing import Any, Dict, List, Literal, Callable, Tuple
 from uuid import uuid4
@@ -14,7 +13,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from utils.data_loader import load_prices, load_series
+from core.data_loader import load_prices, load_series
 
 # Configure logging to show INFO level messages
 logging.basicConfig(
@@ -103,7 +102,8 @@ ALGO_MAP: Dict[str, str] = {
 }
 
 
-class TrainReq(BaseModel):
+class BacktestRequest(BaseModel):
+    """Request schema for portfolio backtesting."""
     algo: Literal[tuple(ALGO_MAP.keys())]  # type: ignore[arg-type]
     tickers: List[str] = Field(..., min_items=1, max_items=8)
     hist_days: int
@@ -113,18 +113,24 @@ class TrainReq(BaseModel):
     tc: float
 
 
-_train_jobs: Dict[str, Dict[str, Any]] = {}
+_backtest_jobs: Dict[str, Dict[str, Any]] = {}
 
 
-@app.post("/train")
-def launch_backtest(req: TrainReq, bt: BackgroundTasks):
+@app.post("/backtest")
+def launch_backtest(req: BacktestRequest, bt: BackgroundTasks):
+    """
+    Launch a portfolio backtesting job asynchronously.
+
+    Accepts algorithm type and parameters, queues the backtest as a background
+    task, and returns a job ID for polling status via GET /backtest/{jid}.
+    """
     jid = uuid4().hex
-    _train_jobs[jid] = {"status": "queued", "algo": req.algo}
-    bt.add_task(_train_worker, jid, req)
+    _backtest_jobs[jid] = {"status": "queued", "algo": req.algo}
+    bt.add_task(_backtest_worker, jid, req)
     return {"job_id": jid}
 
 
-def _train_worker(jid: str, req: TrainReq):
+def _backtest_worker(jid: str, req: BacktestRequest):
     try:
         prices = load_prices(req.tickers, req.hist_days)
         api_mod = import_module(ALGO_MAP[req.algo])
@@ -140,7 +146,7 @@ def _train_worker(jid: str, req: TrainReq):
             str(ts): float(v)
             for ts, v in nav.replace([np.inf, -np.inf], np.nan).dropna().items()
         }
-        _train_jobs[jid] = {
+        _backtest_jobs[jid] = {
             "status": "done",
             "algo": req.algo,
             "nav": nav_json,
@@ -148,73 +154,49 @@ def _train_worker(jid: str, req: TrainReq):
             "metrics": metrics,
         }
     except Exception as exc:  # noqa: BLE001
-        _train_jobs[jid] = {"status": "error", "algo": req.algo, "detail": str(exc)}
+        _backtest_jobs[jid] = {"status": "error", "algo": req.algo, "detail": str(exc)}
 
 
-@app.get("/train/{jid}")
-def train_status(jid: str):
-    if jid not in _train_jobs:
+@app.get("/backtest/{jid}")
+def backtest_status(jid: str):
+    """
+    Poll the status of a backtesting job.
+
+    Returns job status ('queued', 'done', 'error') along with results
+    (nav, weights, metrics) when complete, or error details if failed.
+    """
+    if jid not in _backtest_jobs:
         raise HTTPException(404, "Job not found")
-    return _train_jobs[jid]
+    return _backtest_jobs[jid]
 
 
 # Price forecasting endpoints
 
-# Forecasting algorithm mappings
-_SYNC_FORECASTERS: Dict[str, Callable[[ForecastRequest], Tuple[List[str], List[float], List[str], List[float]]]] = {
+_FORECASTERS: Dict[str, Callable[[ForecastRequest], Tuple[List[str], List[float], List[str], List[float]]]] = {
     "arima": arima.forecast,
     "lstm": lstm.forecast,
     "autoformer": autoformer.forecast,
 }
 
-_ASYNC_FORECASTERS: Dict[str, Callable[[ForecastRequest], Tuple[List[str], List[float], List[str], List[float]]]] = {
-}
-
-
-_forecast_jobs: Dict[str, Dict[str, Any]] = {}
-
-
-def _payload(hd: List[str], hv: List[float], fd: List[str], fv: List[float]) -> Dict[str, Any]:
-    return {
-        "history_dates": hd,
-        "history_values": hv,
-        "forecast_dates": fd,
-        "forecast_values": fv,
-    }
-
 
 @app.post("/forecast/{algo}")
-def forecast(algo: Literal["arima", "lstm", "autoformer"], req: ForecastRequest, bg: BackgroundTasks):
-    """Route dispatcher - runs fast models synchronously, heavy models asynchronously"""
+def forecast(algo: Literal["arima", "lstm", "autoformer"], req: ForecastRequest):
+    """
+    Generate price forecast using the specified algorithm.
 
-    if algo in _SYNC_FORECASTERS:
-        try:
-            hd, hv, fd, fv = _SYNC_FORECASTERS[algo](req)
-            return _payload(hd, hv, fd, fv)
-        except Exception as e:
-            raise HTTPException(500, f"Forecasting error: {str(e)}")
+    Runs the forecasting model synchronously and returns historical data
+    along with predicted values for the requested horizon.
+    """
+    if algo not in _FORECASTERS:
+        raise HTTPException(400, "Unknown forecasting algorithm")
 
-    # Handle async models
-    if algo in _ASYNC_FORECASTERS:
-        task_id = uuid4().hex
-        _forecast_jobs[task_id] = {"status": "running", "algo": algo}
-        bg.add_task(_async_wrapper, algo, req, task_id)
-        return {"task_id": task_id, "status": "running"}
-
-    raise HTTPException(400, "Unknown forecasting algorithm")
-
-
-def _async_wrapper(algo_key: str, req: ForecastRequest, tid: str) -> None:
     try:
-        hd, hv, fd, fv = _ASYNC_FORECASTERS[algo_key](req)
-        _forecast_jobs[tid] = {"status": "done", "algo": algo_key, **_payload(hd, hv, fd, fv)}
-    except Exception as exc:  # noqa: BLE001
-        _forecast_jobs[tid] = {"status": "error", "algo": algo_key, "detail": str(exc)}
-
-
-@app.get("/forecast/result/{task_id}")
-def forecast_result(task_id: str):
-    job = _forecast_jobs.get(task_id)
-    if job is None:
-        raise HTTPException(404, "task_id not found")
-    return job
+        hd, hv, fd, fv = _FORECASTERS[algo](req)
+        return {
+            "history_dates": hd,
+            "history_values": hv,
+            "forecast_dates": fd,
+            "forecast_values": fv,
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Forecasting error: {str(e)}")

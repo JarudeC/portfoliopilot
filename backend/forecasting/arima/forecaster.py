@@ -14,7 +14,7 @@ import pandas as pd
 from statsmodels.tsa.arima.model import ARIMA
 
 from ..config import ARIMAConfig
-from ..data_loader import load_series
+from core.data_loader import load_series
 from ..schemas import ForecastRequest
 from .fallback_strategies import FallbackStrategy, generate_naive_forecast
 from .order_selection import select_best_order

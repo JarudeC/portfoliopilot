@@ -48,7 +48,7 @@ export default function HistoryPage() {
         params.set('type', filters.type)
       }
 
-      const res = await fetch(`/api/train/history?${params}`)
+      const res = await fetch(`/api/backtest/history?${params}`)
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}))
         throw new Error(errorData.error || 'Failed to fetch training history')
@@ -109,7 +109,7 @@ export default function HistoryPage() {
 
   const handleDeleteLog = async (logId: string) => {
     try {
-      const res = await fetch(`/api/train/${logId}`, { method: 'DELETE' })
+      const res = await fetch(`/api/backtest/${logId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete log')
       
       setLogs(prev => prev.filter(log => log.id !== logId))
@@ -123,7 +123,7 @@ export default function HistoryPage() {
 
     try {
       // Call bulk delete API endpoint
-      const res = await fetch('/api/train/bulk-delete', {
+      const res = await fetch('/api/backtest/bulk-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ logIds })
@@ -147,7 +147,7 @@ export default function HistoryPage() {
 
     try {
       // Call delete all API endpoint  
-      const res = await fetch('/api/train/delete-all', {
+      const res = await fetch('/api/backtest/delete-all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       })

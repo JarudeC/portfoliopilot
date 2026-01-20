@@ -19,7 +19,7 @@ import torch.nn.functional as F
 
 from .base import BaseForecaster, ForecastResult
 from .config import TransformerConfig
-from .data_loader import load_series
+from core.data_loader import load_series
 from .schemas import ForecastRequest
 
 logger = logging.getLogger(__name__)

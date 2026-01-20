@@ -1,8 +1,11 @@
 """Unified data loading utilities for financial time series.
 
-This module consolidates all data loading logic from the forecasting module,
-providing a single source of truth for fetching stock price data from Yahoo Finance.
-Eliminates duplication between forecasting.base and utils.data_loader.
+This module provides the single source of truth for fetching stock price data
+from Yahoo Finance. It is used by both forecasting and backtesting modules.
+
+Functions:
+    load_series: Load price data for a single ticker (used by forecasting)
+    load_prices: Load price data for multiple tickers (used by backtesting)
 """
 
 import logging

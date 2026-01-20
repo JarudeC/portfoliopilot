@@ -439,7 +439,7 @@ export function useBacktest(): UseBacktestReturn {
   ) {
     try {
       const claudeJobId = `claude-backtest-${Date.now()}`;
-      await fetch(`/api/train/${claudeJobId}`, {
+      await fetch(`/api/backtest/${claudeJobId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -460,7 +460,7 @@ export function useBacktest(): UseBacktestReturn {
     currentParams: BacktestParams,
     currentAlgo: string
   ) {
-    const res = await fetch("/api/train", {
+    const res = await fetch("/api/backtest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -480,7 +480,7 @@ export function useBacktest(): UseBacktestReturn {
     let pct = 8;
     const poll = setInterval(async () => {
       try {
-        const r = await fetch(`/api/train/${job_id}`);
+        const r = await fetch(`/api/backtest/${job_id}`);
         const data = await r.json();
 
         if (data.status === "done") {

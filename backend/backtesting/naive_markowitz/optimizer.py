@@ -4,9 +4,26 @@ import logging
 import numpy as np
 import pandas as pd
 
-from ..utils import safe_inverse, add_ridge_regularization
-
 logger = logging.getLogger(__name__)
+
+
+def safe_inverse(matrix: np.ndarray) -> np.ndarray:
+    """Invert matrix, falling back to pseudo-inverse if singular."""
+    try:
+        return np.linalg.inv(matrix)
+    except np.linalg.LinAlgError:
+        logger.warning("Matrix singular, using pseudo-inverse")
+        return np.linalg.pinv(matrix)
+
+
+def add_ridge_regularization(
+    cov_matrix: np.ndarray,
+    ridge_lambda: float = 1e-4
+) -> np.ndarray:
+    """Add ridge regularization to covariance matrix diagonal."""
+    cov = cov_matrix.copy()
+    np.fill_diagonal(cov, cov.diagonal() + ridge_lambda)
+    return cov
 
 
 def compute_covariance_matrix(

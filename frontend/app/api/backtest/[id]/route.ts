@@ -141,7 +141,7 @@ export async function GET(
     }
 
     // Proxy to training backend
-    const r = await fetch(`${BACKEND}/train/${id}`);
+    const r = await fetch(`${BACKEND}/backtest/${id}`);
     const data = await r.json();
     
     

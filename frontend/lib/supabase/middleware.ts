@@ -60,8 +60,8 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // Protect authenticated API endpoints
-  if (request.nextUrl.pathname.startsWith('/api/train/history') || 
-      (request.nextUrl.pathname.startsWith('/api/train/') && 
+  if (request.nextUrl.pathname.startsWith('/api/backtest/history') ||
+      (request.nextUrl.pathname.startsWith('/api/backtest/') &&
        request.method === 'DELETE')) {
     if (!user && !session) {
       return NextResponse.json(

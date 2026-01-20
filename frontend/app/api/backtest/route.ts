@@ -1,6 +1,5 @@
-// API endpoint for initiating training jobs
+// API endpoint for initiating backtest jobs
 import { NextRequest, NextResponse } from "next/server";
-import { TrainingLogService } from "@/lib/services/training-logs";
 import { getAuthenticatedUser } from "@/lib/auth/server";
 
 const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8000";
@@ -24,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
-    const r = await fetch(`${BACKEND}/train`, {
+    const r = await fetch(`${BACKEND}/backtest`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -37,11 +36,11 @@ export async function POST(req: NextRequest) {
       jobParameters.set(data.job_id, body);
     }
 
-    // Training completion logged in GET /api/train/[id]
+    // Backtest completion logged in GET /api/backtest/[id]
 
     return NextResponse.json(data, { status: r.status });
   } catch (error) {
-    console.error('Training request failed:', error);
+    console.error('Backtest request failed:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

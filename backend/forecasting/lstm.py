@@ -16,7 +16,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 from .base import BaseForecaster, ForecastResult
 from .config import LSTMConfig
-from .data_loader import load_series
+from core.data_loader import load_series
 from .schemas import ForecastRequest
 
 logger = logging.getLogger(__name__)

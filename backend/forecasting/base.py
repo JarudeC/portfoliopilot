@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from datetime import date
 from typing import List, Tuple
 
-from .data_loader import load_series as _load_series
+from core.data_loader import load_series as _load_series
 from .schemas import ForecastRequest
 
 # Type alias for forecast return value
