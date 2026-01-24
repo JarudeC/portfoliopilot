@@ -10,7 +10,7 @@ import { RATE_LIMIT_WINDOW, MAX_REQUESTS_PER_WINDOW } from '../core/constants';
  * Tracks in-flight requests for deduplication and rate limiting.
  * Prevents duplicate concurrent requests and enforces client-side rate limits.
  */
-export class RequestTracker {
+class RequestTracker {
   private requestCounts: Map<string, { count: number; resetTime: number }> = new Map();
   private pendingRequests: Map<string, Promise<GenerateResponse>> = new Map();
 
@@ -24,15 +24,6 @@ export class RequestTracker {
       symbols: request.stockData.map(s => s.symbol).sort(),
     };
     return btoa(JSON.stringify(normalized));
-  }
-
-  /**
-   * Check if an identical request is already in progress.
-   * Returns the existing promise if found, null otherwise.
-   */
-  checkDuplicateRequest(request: GenerateRequest): Promise<GenerateResponse> | null {
-    const hash = this.generateRequestHash(request);
-    return this.pendingRequests.get(hash) || null;
   }
 
   /**

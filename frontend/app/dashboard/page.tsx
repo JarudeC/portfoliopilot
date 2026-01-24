@@ -11,6 +11,7 @@ import Footer from "../../components/Footer";
 import { ForecastChart, PortfolioPieChart, MetricsTable } from "../../components/charts";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 import { ProgressBar, Filter, Select } from "../../components/ui";
+import { useToast } from "../../components/ui/Toast";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { ClaudePopup } from "../../components/claude";
 import { type ForecastData } from "../../lib/utils/forecastMetrics";
@@ -26,30 +27,19 @@ import {
   FORECAST_DAYS,
 } from "./hooks";
 
+const MAX_STOCKS = 8;
+
 const DOW30 = [
   "AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "DOW",
   "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM",
   "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT",
 ];
 
-/**
- * Expandable dropdown container for parameter configuration.
- */
-const Dropdown = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <details className="group bg-[#14273F] rounded-lg text-white ring-1 ring-[#1B263B]">
-    <summary className="cursor-pointer px-5 py-3 flex items-center justify-between list-none">
-      <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-      <svg
-        className="h-4 w-4 shrink-0 transition-transform duration-200 group-open:rotate-180"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        fill="none"
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      </svg>
-    </summary>
-    <div className="px-5 py-4 border-t border-[#1B263B]">{children}</div>
-  </details>
+const StrategyErrorFallback = () => (
+  <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300">
+    <h3 className="font-medium mb-2">Strategy Generation Error</h3>
+    <p className="text-sm">The strategy generation popup encountered an error. Please refresh the page.</p>
+  </div>
 );
 
 /**
@@ -69,35 +59,24 @@ const ForecastStockItem = ({ ticker, data }: { ticker: string; data: ForecastDat
 
 export default function Dashboard() {
   const [tickers, setTickers] = useState<string[]>([]);
+  const { showWarning } = useToast();
 
   const backtest = useBacktest();
   const forecast = useForecast();
 
-  const toggle = (t: string) =>
-    setTickers((p) => {
-      if (p.includes(t)) return p.filter((x) => x !== t);
-      if (p.length >= 8) {
-        window.alert("You can select a maximum of 8 stocks.");
-        return p;
-      }
-      return [...p, t];
-    });
-
-  /**
-   * Convert selected tickers to StockData format for Claude strategies.
-   */
-  const getStockDataFromTickers = () =>
-    tickers.map(ticker => ({
-      symbol: ticker,
-      price: 100 + Math.random() * 200,
-      marketCap: 1000000000 + Math.random() * 2000000000000,
-      volume: 1000000 + Math.random() * 50000000
-    }));
+  const toggle = (t: string) => {
+    if (tickers.includes(t)) {
+      setTickers(tickers.filter((x) => x !== t));
+    } else if (tickers.length >= MAX_STOCKS) {
+      showWarning("Stock Limit Reached", `You can select a maximum of ${MAX_STOCKS} stocks.`);
+    } else {
+      setTickers([...tickers, t]);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#0D1B2A] text-white flex flex-col">
       <Navbar />
-      <main id="hero"></main>
 
       {/* Three-column layout: stocks, forecasting, backtesting */}
       <main className="flex-1 pt-[72px] pb-20 px-4 lg:px-16 grid grid-cols-1 lg:grid-cols-[14rem_repeat(2,minmax(0,1fr))] gap-4">
@@ -105,22 +84,20 @@ export default function Dashboard() {
         {/* Stock Selection Sidebar */}
         <aside className="bg-[#14273F] rounded-xl p-6 flex flex-col overflow-y-auto">
           <h2 className="text-lg font-semibold mb-6">DOW30 Stocks</h2>
-          <p className="text-xs text-gray-400 mb-2">
-            Select up to <span className="text-[#4CC9F0] font-semibold">8</span> stocks
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-gray-400">
+              Select up to <span className="text-[#4CC9F0] font-semibold">{MAX_STOCKS}</span> stocks
+            </p>
+            {tickers.length > 0 && (
+              <button
+                onClick={() => setTickers([])}
+                className="text-xs text-[#4CC9F0] hover:text-[#3A86FF] transition"
+              >
+                Clear All
+              </button>
+            )}
+          </div>
           <ul className="space-y-2 text-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                id="unselect"
-                type="checkbox"
-                className="accent-[#4CC9F0]"
-                checked={false}
-                onChange={() => setTickers([])}
-              />
-              <label htmlFor="unselect" className="text-sm text-white cursor-pointer font-semibold">
-                (Unselect All)
-              </label>
-            </div>
             {DOW30.map((t) => (
               <li key={t} className="flex items-center gap-2">
                 <input
@@ -389,19 +366,12 @@ export default function Dashboard() {
       <Footer />
 
       {/* Claude Strategy Popups */}
-      <ErrorBoundary
-        fallback={
-          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300">
-            <h3 className="font-medium mb-2">Strategy Generation Error</h3>
-            <p className="text-sm">The strategy generation popup encountered an error. Please refresh the page.</p>
-          </div>
-        }
-      >
+      <ErrorBoundary fallback={<StrategyErrorFallback />}>
         <ClaudePopup
           isOpen={forecast.showPopup}
           onClose={forecast.handlePopupClose}
           mode="forecast"
-          stockData={getStockDataFromTickers()}
+          tickers={tickers}
           onStrategyGenerated={forecast.handleClaudeGenerated}
           onError={forecast.handleClaudeError}
           dashboardParams={{
@@ -412,19 +382,12 @@ export default function Dashboard() {
         />
       </ErrorBoundary>
 
-      <ErrorBoundary
-        fallback={
-          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300">
-            <h3 className="font-medium mb-2">Strategy Generation Error</h3>
-            <p className="text-sm">The strategy generation popup encountered an error. Please refresh the page.</p>
-          </div>
-        }
-      >
+      <ErrorBoundary fallback={<StrategyErrorFallback />}>
         <ClaudePopup
           isOpen={backtest.showPopup}
           onClose={backtest.handlePopupClose}
           mode="backtest"
-          stockData={getStockDataFromTickers()}
+          tickers={tickers}
           onStrategyGenerated={backtest.handleClaudeGenerated}
           onError={backtest.handleClaudeError}
           dashboardParams={{

@@ -382,78 +382,7 @@ function calculateMSE(predictions: number[], actual: number[]): number {
  */
 function calculateMAE(predictions: number[], actual: number[]): number {
   if (predictions.length !== actual.length || predictions.length === 0) return 0;
-  
+
   const absoluteErrors = predictions.map((pred, i) => Math.abs(pred - actual[i]));
   return absoluteErrors.reduce((sum, err) => sum + err, 0) / predictions.length;
-}
-
-/**
- * Execute Custom AI model for backtesting using the existing executeUserCode function
- */
-async function executeCustomAIForBacktest(
-  trainData: { date: string; price: number }[], 
-  predictionLength: number, 
-  ticker: string,
-  claudeStrategy?: any
-): Promise<number[]> {
-  if (!claudeStrategy || !claudeStrategy.code) {
-    throw new Error('No Claude strategy code available for backtesting');
-  }
-
-  try {
-    // Import the executeUserCode function
-    const { executeUserCode } = await import('../claude/client');
-    
-    // Prepare the historical data in the format the AI model expects
-    const stockData = trainData.map(point => ({
-      symbol: ticker,
-      price: point.price,
-      date: point.date
-    }));
-
-    // Use the same executeUserCode function that the dashboard uses
-    const result = await executeUserCode(
-      claudeStrategy.code, // Final code from Monaco editor (edited or original)
-      'forecast',
-      stockData,
-      undefined, // securityConfig
-      predictionLength, // forecastDays
-      undefined // dashboardParams
-    );
-
-    if (!result.success) {
-      throw new Error(`Custom AI execution failed: ${result.error || 'Unknown error'}`);
-    }
-
-    if (!result.predictions || !Array.isArray(result.predictions)) {
-      throw new Error('Custom AI did not return valid predictions array');
-    }
-
-    // Extract price values from predictions
-    let predictions = result.predictions.map((pred: any) => {
-      if (typeof pred === 'number') {
-        return pred;
-      } else if (pred && typeof pred === 'object') {
-        return pred.price || pred.value || 0;
-      } else {
-        return 0;
-      }
-    });
-
-    // Ensure we have the right number of predictions
-    if (predictions.length < predictionLength) {
-      // Pad with last known price if needed
-      const lastPrice = predictions[predictions.length - 1] || trainData[trainData.length - 1].price;
-      while (predictions.length < predictionLength) {
-        predictions.push(lastPrice);
-      }
-    } else if (predictions.length > predictionLength) {
-      // Trim to required length
-      predictions = predictions.slice(0, predictionLength);
-    }
-
-    return predictions;
-  } catch (error) {
-    throw error;
-  }
 }

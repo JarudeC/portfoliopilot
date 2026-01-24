@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
-import { generateCodeOnly, executeUserCode, type GenerationResult, type StockData } from "../../lib/claude";
+import { generateCodeOnly, type GenerationResult } from "../../lib/claude";
 import CodeEditor from './CodeEditor';
 import LoadStrategyModal from './LoadStrategyModal';
 import type { HydratedStrategy } from '@/lib/types/strategy';
@@ -33,7 +33,7 @@ function getErrorMessage(err: unknown): string {
 interface ClaudePopupProps {
   isOpen: boolean;
   onClose: () => void;
-  stockData?: StockData[];
+  tickers: string[];
   onStrategyGenerated?: (result: GenerationResult) => void;
   onError?: (error: Error) => void;
   mode: 'forecast' | 'backtest';
@@ -42,7 +42,7 @@ interface ClaudePopupProps {
     // Forecast params
     historyDays?: number;
     forecastDays?: number;
-    // Backtest params  
+    // Backtest params
     backtestDays?: number;
     lookbackDays?: number;
     evaluationWindow?: number;
@@ -72,12 +72,12 @@ const FORECAST_EXAMPLES = [
   "Volatility-adjusted random walk. Use last price as starting point, calculate 30-day historical volatility, generate daily moves from normal distribution with mean=0 and std=volatility/3 for stability."
 ];
 
-export default function ClaudePopup({ 
+export default function ClaudePopup({
   isOpen,
   onClose,
-  stockData, 
-  onStrategyGenerated, 
-  onError, 
+  tickers,
+  onStrategyGenerated,
+  onError,
   mode,
   dashboardParams = {}
 }: ClaudePopupProps) {
@@ -135,7 +135,6 @@ Press Ctrl+Enter to generate, Esc to close`;
   // Code review states
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
   const [showCodeReview, setShowCodeReview] = useState<boolean>(false);
-  const [executingCode, setExecutingCode] = useState<boolean>(false);
 
   // Loaded strategy state (for save/update flow)
   const [loadedStrategy, setLoadedStrategy] = useState<HydratedStrategy | null>(null);
@@ -153,7 +152,7 @@ Press Ctrl+Enter to generate, Esc to close`;
   const charactersUsed = userDescription.length;
   const charactersRemaining = MAX_DESCRIPTION_LENGTH - charactersUsed;
   const isDescriptionValid = charactersUsed >= MIN_DESCRIPTION_LENGTH && charactersUsed <= MAX_DESCRIPTION_LENGTH;
-  const hasStocksSelected = stockData && stockData.length > 0;
+  const hasStocksSelected = tickers && tickers.length > 0;
 
   // Input validation
   const validateInput = useCallback((input: string): string | null => {
@@ -182,9 +181,9 @@ Press Ctrl+Enter to generate, Esc to close`;
     if (error) setError(null);
   }, [validateInput, error]);
 
-  // Generate code function - first step: Generate code only for review
+  // Generate code function - generates code only for review
   const handleGenerate = useCallback(async () => {
-    if (loading || !stockData || stockData.length === 0) return;
+    if (loading || !tickers || tickers.length === 0) return;
 
     // Final validation
     const validation = validateInput(userDescription);
@@ -199,22 +198,22 @@ Press Ctrl+Enter to generate, Esc to close`;
       setError(null);
       setValidationError(null);
 
-      // Call the new generateCodeOnly function to get code without execution
+      // Generate code only - execution happens later with real data when Train is clicked
       const result = await generateCodeOnly(
         userDescription.trim(),
         mode,
-        stockData, // Use actual user-selected stocks
-        undefined, // securityConfig
+        tickers.map(t => ({ symbol: t, price: 0 })), // Minimal data for code generation (prices not used in prompt)
+        undefined, // securityConfig (unused but can put in to make security stricter)
         mode === 'forecast' ? dashboardParams.forecastDays : undefined
       );
-      
+
       if (result.success && result.code) {
         setGeneratedCode(result.code);
         setShowCodeReview(true);
       } else {
         setError(result.error || "No code was generated. Please try a different description.");
       }
-      
+
     } catch (err) {
       console.error("Code generation error:", err);
       setError(getErrorMessage(err));
@@ -222,54 +221,32 @@ Press Ctrl+Enter to generate, Esc to close`;
     } finally {
       setLoading(false);
     }
-  }, [userDescription, stockData, loading, validateInput, onError, mode, dashboardParams]);
+  }, [userDescription, tickers, loading, validateInput, onError, mode, dashboardParams]);
 
-  // Execute approved code function - second step
-  const handleCodeApproval = useCallback(async (editedCode: string) => {
-    if (executingCode || !stockData || stockData.length === 0) return;
+  // Handle code approval - passes code to parent for execution with real data when Train is clicked
+  const handleCodeApproval = useCallback((editedCode: string) => {
+    if (!tickers || tickers.length === 0) return;
 
-    try {
-      setExecutingCode(true);
-      setError(null);
+    // Create result with just the code - execution happens in useBacktest/useForecast with real data
+    const result: GenerationResult = {
+      success: true,
+      type: mode,
+      code: editedCode,
+      fallbackUsed: false,
+      executionTime: 0,
+      loadedFromSaved: loadedStrategy ? true : undefined
+    };
 
-      
-      const result = await executeUserCode(
-        editedCode,
-        mode,
-        stockData,
-        undefined,
-        mode === 'forecast' ? dashboardParams.forecastDays : undefined,
-        dashboardParams
-      );
+    // Update state
+    setLastResult(result);
+    setShowCodeReview(false);
+    setGeneratedCode(null);
 
-      // Add flag if this was loaded from saved strategies
-      if (loadedStrategy) {
-        result.loadedFromSaved = true;
-      }
-
-      // Update state with results
-      setLastResult(result);
-      setShowCodeReview(false);
-      setGeneratedCode(null);
-
-      // Notify parent component
-      if (onStrategyGenerated) {
-        onStrategyGenerated(result);
-      }
-
-      // Show success message briefly
-      if (result.fallbackUsed) {
-        setError("Execution failed, using fallback strategy. The edited code couldn't be executed safely.");
-      }
-
-    } catch (err) {
-      console.error("Strategy execution error:", err);
-      setError(getErrorMessage(err));
-      onError?.(err instanceof Error ? err : new Error(String(err)));
-    } finally {
-      setExecutingCode(false);
+    // Notify parent component (useForecast/useBacktest) - they will execute with real data when Train is clicked
+    if (onStrategyGenerated) {
+      onStrategyGenerated(result);
     }
-  }, [stockData, executingCode, onStrategyGenerated, onError, mode, dashboardParams, loadedStrategy]);
+  }, [tickers, onStrategyGenerated, mode, loadedStrategy]);
 
   // Handle code rejection
   const handleCodeRejection = useCallback(() => {
@@ -311,10 +288,10 @@ Press Ctrl+Enter to generate, Esc to close`;
 
   // Handle close popup
   const handleClose = useCallback(() => {
-    if (loading || executingCode) return;
+    if (loading) return;
     handleClear();
     onClose();
-  }, [loading, executingCode, handleClear, onClose]);
+  }, [loading, handleClear, onClose]);
 
   // Handle overlay click
   const handleOverlayClick = useCallback((e: React.MouseEvent) => {
@@ -500,7 +477,7 @@ Press Ctrl+Enter to generate, Esc to close`;
             onApprove={handleCodeApproval}
             onReject={handleCodeRejection}
             mode={mode}
-            loading={executingCode}
+            loading={false}
             strategyDescription={userDescription}
             loadedStrategy={loadedStrategy}
             onStrategySaved={() => setLoadedStrategy(null)}
@@ -675,7 +652,7 @@ Press Ctrl+Enter to generate, Esc to close`;
             <button
               type="button"
               onClick={handleClose}
-              disabled={loading || executingCode}
+              disabled={loading}
               className="px-4 py-3 text-gray-400 hover:text-white border border-gray-600 hover:border-gray-500 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gray-500"
             >
               Cancel

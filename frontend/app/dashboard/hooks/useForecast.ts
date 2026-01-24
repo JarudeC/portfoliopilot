@@ -4,7 +4,7 @@
  */
 import { useState, useCallback } from 'react';
 import { useToast } from '../../../components/ui/Toast';
-import { type GenerationResult } from '../../../lib/claude/client';
+import { type GenerationResult, executeUserCode } from '../../../lib/claude/client';
 import {
   calculateForecastMetrics,
   calculateOverallForecastMetrics,
@@ -197,7 +197,8 @@ export function useForecast(): UseForecastReturn {
   }, [loading, isClaudeSelected, params, algo, claudeStrategy]);
 
   /**
-   * Execute Claude AI strategy forecast.
+   * Execute Claude AI strategy forecast with real data.
+   * Fetches real prices from /api/prices and executes the AI-generated code.
    */
   async function runClaudeForecast(
     tickers: string[],
@@ -208,19 +209,18 @@ export function useForecast(): UseForecastReturn {
     currentStrategy: GenerationResult | null,
     onProgress: () => void
   ) {
-    if (!currentStrategy || !currentStrategy.predictions) {
+    if (!currentStrategy || !currentStrategy.code) {
       alert("⚠️ No Claude Strategy Available\n\nPlease generate a Claude strategy first.");
       setLoading(false);
       return;
     }
-
-    const claudePredictions = currentStrategy.predictions;
 
     for (let i = 0; i < tickers.length; i++) {
       const ticker = tickers[i];
       try {
         if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
 
+        // Fetch real historical prices
         const res = await fetch(`/api/prices`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -236,17 +236,38 @@ export function useForecast(): UseForecastReturn {
           price: payload.prices[index]
         }));
 
+        // Build stockData with real prices for AI code execution
+        const stockData = [{
+          symbol: ticker,
+          price: payload.prices[payload.prices.length - 1],
+          lookbackPrices: payload.prices,
+          lookbackDates: payload.dates
+        }];
+
+        // Execute the AI-generated code with real data
+        const result = await executeUserCode(
+          currentStrategy.code,
+          'forecast',
+          stockData,
+          undefined, // securityConfig
+          currentParams.forecastDays,
+          {
+            historyDays: currentParams.histDays
+          }
+        );
+
         let forecastSeries = [];
-        if (claudePredictions && Array.isArray(claudePredictions)) {
+        if (result.success && result.predictions && Array.isArray(result.predictions)) {
           const lastPrice = payload.prices[payload.prices.length - 1] || 100;
-          const firstPred = claudePredictions[0];
+          const firstPred = result.predictions[0];
           const isMultiplier = firstPred && firstPred.price >= 0.5 && firstPred.price <= 2.0;
 
-          forecastSeries = claudePredictions.map((pred: any) => ({
+          forecastSeries = result.predictions.map((pred: any) => ({
             date: pred.date,
             price: isMultiplier ? lastPrice * pred.price : pred.price
           }));
         } else {
+          // Fallback if execution failed
           forecastSeries = generateFallbackForecast(payload.prices, end, currentParams.forecastDays);
         }
 

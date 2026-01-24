@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import {
-  generatePortfolioWeights,
   generateCodeOnlyServer as generateCodeOnly,
-  executeUserCodeServer as executeUserCode,
-  validateSecurity,
   createSecurityConfig,
   ClaudeError,
   ClaudeApiError,
@@ -12,39 +9,10 @@ import {
   RateLimitError,
   ErrorFactory,
 } from '../../../../lib/claude';
-import type { StockData, GenerationResult, SecurityConfig } from '../../../../lib/claude';
 import { requireAuth } from '@/lib/auth/server';
 import { createServerApiKeyService } from '@/lib/services/api-keys';
 
-// Request/Response Type Interfaces
-interface GenerateRequest {
-  userDescription: string;
-  stockData: StockData[];
-  mode: 'forecast' | 'backtest';
-  securityConfig?: Partial<SecurityConfig>;
-  forecastDays?: number; // Only used for forecast mode
-  dashboardParams?: {
-    backtestDays?: number;
-    lookbackDays?: number;
-    evaluationWindow?: number;
-    transactionCost?: number;
-    historyDays?: number;
-  };
-  // New parameters for code review feature
-  generateOnly?: boolean; // If true, only generate code without execution
-  userCode?: string; // User-provided code to execute
-}
-
-interface GenerateResponse {
-  success: boolean;
-  result?: GenerationResult;
-  error?: string;
-  rateLimitInfo?: {
-    remaining: number;
-    resetTime: number;
-  };
-}
-
+// Response Type Interfaces
 interface ErrorResponse {
   success: false;
   error: string;
@@ -56,10 +24,10 @@ interface ErrorResponse {
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 10; // 10 requests per minute per IP
 const REQUEST_TIMEOUT = 30000; // 30 seconds
-const MAX_DESCRIPTION_LENGTH = 2000;
-const MAX_STOCK_DATA_COUNT = 100;
 
-// In-memory rate limiting store (use Redis in production)
+// In-memory rate limiting store
+// Note: Resets on server restart and doesn't sync across multiple server instances.
+// For production at scale, consider Redis or a database-backed solution.
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 
 // Utility Functions
@@ -105,77 +73,6 @@ function checkRateLimit(ip: string): { allowed: boolean; remaining: number; rese
   };
 }
 
-function validateRequestBody(body: any, requestId?: string): { valid: boolean; error?: ClaudeError; data?: GenerateRequest } {
-  try {
-    if (!body || typeof body !== 'object') {
-      throw ErrorFactory.createValidationError('Request body must be a JSON object', 'body', body, requestId);
-    }
-    
-    const { userDescription, stockData, mode, securityConfig, forecastDays, dashboardParams, generateOnly, userCode } = body;
-    
-    // Validate userDescription (not required if executing userCode)
-    if (!userCode && (!userDescription || typeof userDescription !== 'string')) {
-      throw ErrorFactory.createValidationError('userDescription is required and must be a string', 'userDescription', userDescription, requestId);
-    }
-    
-    if (userDescription && userDescription.length > MAX_DESCRIPTION_LENGTH) {
-      throw ErrorFactory.createValidationError(`userDescription must be ${MAX_DESCRIPTION_LENGTH} characters or less`, 'userDescription', userDescription, requestId);
-    }
-    
-    // Validate mode
-    if (!mode || (mode !== 'forecast' && mode !== 'backtest')) {
-      throw ErrorFactory.createValidationError('mode is required and must be either "forecast" or "backtest"', 'mode', mode, requestId);
-    }
-    
-    // Validate forecastDays for forecast mode
-    if (mode === 'forecast' && forecastDays !== undefined) {
-      if (typeof forecastDays !== 'number' || !Number.isInteger(forecastDays) || forecastDays < 1 || forecastDays > 365) {
-        throw ErrorFactory.createValidationError('forecastDays must be an integer between 1 and 365', 'forecastDays', forecastDays, requestId);
-      }
-    }
-    
-    // Validate stockData
-    if (!Array.isArray(stockData)) {
-      throw ErrorFactory.createValidationError('stockData must be an array', 'stockData', stockData, requestId);
-    }
-    
-    if (stockData.length === 0) {
-      throw ErrorFactory.createValidationError('stockData array cannot be empty', 'stockData', stockData, requestId);
-    }
-    
-    if (stockData.length > MAX_STOCK_DATA_COUNT) {
-      throw ErrorFactory.createValidationError(`stockData array cannot exceed ${MAX_STOCK_DATA_COUNT} items`, 'stockData', stockData, requestId);
-    }
-    
-    // Validate each stock data item
-    for (let i = 0; i < stockData.length; i++) {
-      const stock = stockData[i];
-      if (!stock || typeof stock !== 'object') {
-        throw ErrorFactory.createValidationError(`stockData[${i}] must be an object`, `stockData[${i}]`, stock, requestId);
-      }
-      
-      if (!stock.symbol || typeof stock.symbol !== 'string') {
-        throw ErrorFactory.createValidationError(`stockData[${i}].symbol is required and must be a string`, `stockData[${i}].symbol`, stock.symbol, requestId);
-      }
-      
-      if (typeof stock.price !== 'number' || !isFinite(stock.price) || stock.price <= 0) {
-        throw ErrorFactory.createValidationError(`stockData[${i}].price must be a positive number`, `stockData[${i}].price`, stock.price, requestId);
-      }
-    }
-    
-    // Validate securityConfig if provided
-    if (securityConfig && typeof securityConfig !== 'object') {
-      throw ErrorFactory.createValidationError('securityConfig must be an object if provided', 'securityConfig', securityConfig, requestId);
-    }
-    
-    return { valid: true, data: { userDescription, stockData, mode, securityConfig, forecastDays, dashboardParams, generateOnly, userCode } };
-  } catch (error: any) {
-    if (error instanceof ClaudeError) {
-      return { valid: false, error };
-    }
-    return { valid: false, error: ErrorFactory.createValidationError(error?.message || 'Validation failed', undefined, undefined, requestId) };
-  }
-}
 
 function createErrorResponse(error: string | ClaudeError, statusCode?: number): NextResponse<ErrorResponse> {
   let errorMessage: string;
@@ -212,29 +109,6 @@ function createErrorResponse(error: string | ClaudeError, statusCode?: number): 
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
         'X-XSS-Protection': '1; mode=block',
-      }
-    }
-  );
-}
-
-function createSuccessResponse(result: GenerationResult, rateLimitInfo?: { remaining: number; resetTime: number }): NextResponse<GenerateResponse> {
-  return NextResponse.json(
-    {
-      success: true,
-      result,
-      ...(rateLimitInfo && { rateLimitInfo }),
-    },
-    {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'DENY',
-        'X-XSS-Protection': '1; mode=block',
-        ...(rateLimitInfo && {
-          'X-RateLimit-Remaining': rateLimitInfo.remaining.toString(),
-          'X-RateLimit-Reset': Math.ceil(rateLimitInfo.resetTime / 1000).toString(),
-        }),
       }
     }
   );
@@ -290,7 +164,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return response;
     }
     
-    // 4. Parse and Validate Request Body
+    // 4. Parse Request Body (client.ts already validates)
     let requestBody: any;
     try {
       requestBody = await request.json();
@@ -298,28 +172,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const error = ErrorFactory.createValidationError('Invalid JSON in request body', 'body', undefined, requestId);
       return createErrorResponse(error);
     }
-    
-    const validation = validateRequestBody(requestBody, requestId);
-    if (!validation.valid) {
-      return createErrorResponse(validation.error!);
-    }
-    
-    const { userDescription, stockData, mode, securityConfig, forecastDays, dashboardParams, generateOnly, userCode } = validation.data!;
-    
-    // 5. Security Validation
+
+    const { userDescription, stockData, mode, securityConfig, forecastDays } = requestBody;
+
+    // 5. Create security config (validation happens in generateCodeOnly)
     const secConfig = securityConfig ? createSecurityConfig(securityConfig) : createSecurityConfig({});
-    const securityValidation = validateSecurity(userDescription, undefined, secConfig);
-    
-    if (!securityValidation.overallValid) {
-      const error = ErrorFactory.createSecurityError(
-        `Security validation failed: ${securityValidation.promptValidation.blockedReason}`,
-        securityValidation.promptValidation.blockedReason || 'Security violation detected',
-        'HIGH',
-        requestId
-      );
-      return createErrorResponse(error, 400);
-    }
-    
+
     // 6. Initialize Claude API
     let anthropic: Anthropic;
     try {
@@ -368,135 +226,46 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     };
     
-    // 8. Handle different request types
-    const processRequest = async (): Promise<GenerationResult | { success: boolean; code?: string; error?: string }> => {
-      return new Promise(async (resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new TimeoutError('Request timeout', REQUEST_TIMEOUT, requestId));
-        }, REQUEST_TIMEOUT);
-        
-        try {
-          let result: GenerationResult | { success: boolean; code?: string; error?: string };
-          
-          if (userCode) {
-            // Execute user-provided code
-            result = await executeUserCode(
-              userCode,
-              stockData,
-              mode,
-              forecastDays || 30,
-              dashboardParams,
-              secConfig
-            );
-          } else if (generateOnly) {
-            // Generate code only, don't execute
-            result = await generateCodeOnly(
-              userDescription,
-              stockData,
-              mode,
-              claudeApiCall,
-              secConfig,
-              forecastDays || 30
-            );
-          } else {
-            // Original flow: generate and execute
-            result = await generatePortfolioWeights(
-              userDescription,
-              stockData,
-              mode,
-              claudeApiCall,
-              secConfig,
-              forecastDays || 30,
-              dashboardParams
-            );
-          }
-          
-          clearTimeout(timeout);
-          resolve(result);
-        } catch (error) {
-          clearTimeout(timeout);
-          reject(error);
-        }
+    // 8. Generate code with timeout
+    const processRequest = async (): Promise<{ success: boolean; code?: string; error?: string }> => {
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new TimeoutError('Request timeout', REQUEST_TIMEOUT, requestId)), REQUEST_TIMEOUT);
       });
+
+      return Promise.race([
+        generateCodeOnly(userDescription, stockData, mode, claudeApiCall, secConfig, forecastDays || 30),
+        timeoutPromise
+      ]);
     };
     
     // 9. Execute Request
-    let result: GenerationResult | { success: boolean; code?: string; error?: string };
+    let result: { success: boolean; code?: string; error?: string };
     try {
       result = await processRequest();
     } catch (generationError: any) {
-      console.error('Portfolio generation error:', generationError);
-      
-      // Handle specific error types with fallback strategies
+      console.error('Code generation error:', generationError);
+
       if (generationError instanceof TimeoutError) {
         return createErrorResponse(generationError, 408);
       }
-      
+
       if (generationError instanceof ClaudeError) {
-        // For retryable errors, provide fallback instead of failing
-        if (!generationError.isRetryable()) {
-          return createErrorResponse(generationError);
-        }
+        return createErrorResponse(generationError);
       }
-      
-      // For other errors, provide a fallback result
-      if (mode === 'backtest') {
-        const fallbackWeights = stockData.map(() => 1.0 / stockData.length);
-        result = {
-          success: true,
-          type: mode,
-          weights: fallbackWeights,
-          error: `Generation failed: ${generationError.message}. Using equal weights fallback.`,
-          fallbackUsed: true,
-          executionTime: 0,
-        };
-      } else {
-        // Forecast fallback
-        const predictions = [];
-        const startDate = new Date();
-        const days = forecastDays || 30;
-        
-        for (let i = 1; i <= days; i++) {
-          const futureDate = new Date(startDate);
-          futureDate.setDate(startDate.getDate() + i);
-          
-          predictions.push({
-            date: futureDate.toISOString().split('T')[0],
-            price: stockData[0].price * (1 + (Math.random() - 0.5) * 0.01),
-            confidence: 0.5
-          });
-        }
-        
-        result = {
-          success: true,
-          type: mode,
-          predictions: predictions,
-          error: `Generation failed: ${generationError.message}. Using simple trend fallback.`,
-          fallbackUsed: true,
-          executionTime: 0,
-        };
-      }
+
+      return createErrorResponse(generationError.message || 'Generation failed', 500);
     }
-    
+
     // 10. Return Success Response
-    if (generateOnly && 'code' in result) {
-      // For code-only generation, return special response format
-      return NextResponse.json({
-        success: result.success,
-        code: result.code,
-        error: result.error,
-        rateLimitInfo: {
-          remaining: rateLimitCheck.remaining,
-          resetTime: rateLimitCheck.resetTime,
-        }
-      });
-    } else {
-      // Normal generation result
-      return createSuccessResponse(result as GenerationResult, {
+    return NextResponse.json({
+      success: result.success,
+      code: result.code,
+      error: result.error,
+      rateLimitInfo: {
         remaining: rateLimitCheck.remaining,
         resetTime: rateLimitCheck.resetTime,
-      });
-    }
+      }
+    });
     
   } catch (error: any) {
     // 11. Global Error Handler
@@ -512,19 +281,3 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 }
 
-// Handle unsupported HTTP methods
-export async function GET(): Promise<NextResponse> {
-  return createErrorResponse('Method not allowed. Use POST.', 405);
-}
-
-export async function PUT(): Promise<NextResponse> {
-  return createErrorResponse('Method not allowed. Use POST.', 405);
-}
-
-export async function DELETE(): Promise<NextResponse> {
-  return createErrorResponse('Method not allowed. Use POST.', 405);
-}
-
-export async function PATCH(): Promise<NextResponse> {
-  return createErrorResponse('Method not allowed. Use POST.', 405);
-}

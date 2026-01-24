@@ -253,7 +253,7 @@ export async function generateCodeOnly(
 
       return {
         success: true,
-        code: codeToReturn,
+        code: codeToReturn, 
         securityValidation: {
           promptValid: true,
           codeValid: true,

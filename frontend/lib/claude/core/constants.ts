@@ -32,25 +32,12 @@ export const MAX_REQUESTS_PER_WINDOW = 8;
 /** Maximum retry attempts for failed requests */
 export const DEFAULT_MAX_RETRIES = 3;
 
-/** Maximum length for strategy description */
-export const MAX_DESCRIPTION_LENGTH = 2000;
-
-/** Maximum number of stocks that can be processed */
-export const MAX_STOCK_COUNT = 100;
-
 // ============================================================================
 // Defaults
 // ============================================================================
 
 /** Default number of days for forecast predictions */
 export const DEFAULT_FORECAST_DAYS = 30;
-
-/** Default stock data for testing when none provided */
-export const DEFAULT_STOCK_DATA = [
-  { symbol: 'SPY', price: 400 },
-  { symbol: 'QQQ', price: 350 },
-  { symbol: 'VTI', price: 200 },
-] as const;
 
 // ============================================================================
 // Fallback Trend Multipliers

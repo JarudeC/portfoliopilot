@@ -7,8 +7,3 @@ export type {
   GenerationResult,
   SecurityConfig,
 } from '../../lib/claude';
-
-export {
-  ClientErrorType,
-  ClaudeClientError
-} from '../../lib/claude';

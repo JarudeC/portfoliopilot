@@ -364,78 +364,12 @@ export class ErrorFactory {
   }
 }
 
-// Error aggregator for handling multiple errors
-export class ErrorAggregator {
-  private errors: ClaudeError[] = [];
-
-  add(error: ClaudeError): void {
-    this.errors.push(error);
-  }
-
-  hasErrors(): boolean {
-    return this.errors.length > 0;
-  }
-
-  getErrors(): ClaudeError[] {
-    return [...this.errors];
-  }
-
-  getHighestSeverity(): ErrorSeverity {
-    if (this.errors.length === 0) return ErrorSeverity.LOW;
-
-    const severityOrder = [ErrorSeverity.LOW, ErrorSeverity.MEDIUM, ErrorSeverity.HIGH, ErrorSeverity.CRITICAL];
-    return this.errors.reduce((highest: ErrorSeverity, error: ClaudeError) => {
-      const currentIndex = severityOrder.indexOf(error.severity);
-      const highestIndex = severityOrder.indexOf(highest);
-      return currentIndex > highestIndex ? error.severity : highest;
-    }, ErrorSeverity.LOW);
-  }
-
-  getMostCriticalError(): ClaudeError | null {
-    if (this.errors.length === 0) return null;
-
-    const severityOrder = [ErrorSeverity.LOW, ErrorSeverity.MEDIUM, ErrorSeverity.HIGH, ErrorSeverity.CRITICAL];
-    return this.errors.reduce((mostCritical, error) => {
-      const currentIndex = severityOrder.indexOf(error.severity);
-      const criticalIndex = severityOrder.indexOf(mostCritical.severity);
-      return currentIndex > criticalIndex ? error : mostCritical;
-    });
-  }
-
-  clear(): void {
-    this.errors = [];
-  }
-}
-
 // Error utilities
 export class ErrorUtils {
-  static isRetryableError(error: any): boolean {
-    return error instanceof ClaudeError && error.isRetryable();
-  }
-
   static getRetryDelay(attempt: number, baseDelay: number = 1000): number {
     // Exponential backoff with jitter
     const delay = baseDelay * Math.pow(2, attempt - 1);
     const jitter = Math.random() * 0.1 * delay;
     return Math.min(delay + jitter, API_REQUEST_TIMEOUT); // Max equals API timeout
-  }
-
-  static shouldShowToUser(error: any): boolean {
-    if (!(error instanceof ClaudeError)) return true;
-    return error.severity !== ErrorSeverity.LOW;
-  }
-
-  static formatUserMessage(error: any): string {
-    if (error instanceof ClaudeError) {
-      return error.getUserMessage();
-    }
-    return error.message || 'An unexpected error occurred';
-  }
-
-  static formatSuggestions(error: any): string[] {
-    if (error instanceof ClaudeError) {
-      return error.getSuggestions();
-    }
-    return ['Try again', 'Contact support if problem persists'];
   }
 }

@@ -1,13 +1,11 @@
-"""Request and response schemas for forecasting API.
+"""Request schema for forecasting API.
 
-This module defines Pydantic models for validating forecast requests and responses,
+This module defines Pydantic models for validating forecast requests,
 ensuring data integrity at the API boundary.
 """
 
 from datetime import date, datetime
-from typing import List
-
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ForecastRequest(BaseModel):
@@ -45,12 +43,14 @@ class ForecastRequest(BaseModel):
         description="Number of trading days to predict forward",
     )
 
-    @validator("ticker")
+    @field_validator("ticker")
+    @classmethod
     def _normalize_ticker(cls, v: str) -> str:
         """Normalize ticker to uppercase and strip whitespace."""
         return v.strip().upper()
 
-    @validator("end")
+    @field_validator("end")
+    @classmethod
     def _validate_end_date(cls, v: date) -> date:
         """Ensure end date is not in the future."""
         today = datetime.utcnow().date()
@@ -60,34 +60,9 @@ class ForecastRequest(BaseModel):
             )
         return v
 
-    @validator("start")
-    def _validate_date_range(cls, v: date, values) -> date:
+    @model_validator(mode="after")
+    def _validate_date_range(self) -> "ForecastRequest":
         """Ensure start date is before end date."""
-        end = values.get("end")
-        if end and v >= end:
+        if self.start >= self.end:
             raise ValueError("start must be earlier than end")
-        return v
-
-
-class ForecastResponse(BaseModel):
-    """Response schema for forecasting endpoints.
-
-    Attributes:
-        history_dates: List of ISO date strings for historical data
-        history_values: List of historical price values
-        forecast_dates: List of ISO date strings for forecasted dates
-        forecast_values: List of predicted price values
-    """
-
-    history_dates: List[str] = Field(
-        ..., description="Historical dates in YYYY-MM-DD format"
-    )
-    history_values: List[float] = Field(
-        ..., description="Historical price values"
-    )
-    forecast_dates: List[str] = Field(
-        ..., description="Forecast dates in YYYY-MM-DD format"
-    )
-    forecast_values: List[float] = Field(
-        ..., description="Predicted price values"
-    )
+        return self

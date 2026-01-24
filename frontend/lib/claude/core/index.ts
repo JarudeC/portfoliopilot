@@ -23,11 +23,8 @@ export {
   // Limits
   MAX_REQUESTS_PER_WINDOW,
   DEFAULT_MAX_RETRIES,
-  MAX_DESCRIPTION_LENGTH,
-  MAX_STOCK_COUNT,
   // Defaults
   DEFAULT_FORECAST_DAYS,
-  DEFAULT_STOCK_DATA,
   // Trend multipliers
   TREND_UPWARD,
   TREND_VOLATILE_RANGE,
@@ -54,6 +51,5 @@ export {
   ParseError,
   SecurityError,
   ErrorFactory,
-  ErrorAggregator,
   ErrorUtils,
 } from './errors';

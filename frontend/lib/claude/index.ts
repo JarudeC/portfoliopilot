@@ -32,11 +32,8 @@ export {
   // Limits
   MAX_REQUESTS_PER_WINDOW,
   DEFAULT_MAX_RETRIES,
-  MAX_DESCRIPTION_LENGTH,
-  MAX_STOCK_COUNT,
   // Defaults
   DEFAULT_FORECAST_DAYS,
-  DEFAULT_STOCK_DATA,
   // Trend multipliers
   TREND_UPWARD,
   TREND_VOLATILE_RANGE,
@@ -60,7 +57,6 @@ export {
   ParseError,
   SecurityError,
   ErrorFactory,
-  ErrorAggregator,
   ErrorUtils,
 } from './core/errors';
 
@@ -69,29 +65,16 @@ export {
 // ============================================================================
 
 export {
-  generateStrategy,
   generateCodeOnly,
   executeUserCode,
-  ClientErrorType,
-  ClaudeClientError,
 } from './client/client';
 
 export type {
   GenerateRequest,
   GenerateResponse,
-  LoadingState,
 } from './client/client';
 
-export {
-  RequestTracker,
-  requestTracker,
-} from './client/request-tracker';
-
-export {
-  LoadingStateManager,
-  loadingStateManager,
-  loadingHelpers,
-} from './client/loading-state';
+export { requestTracker } from './client/request-tracker';
 
 // ============================================================================
 // Server Module (AI Generation)
@@ -129,8 +112,6 @@ export {
 export {
   validateSecurity,
   createSecurityConfig,
-  validatePrompt,
-  validateCode,
 } from './execution/security';
 
 export type {

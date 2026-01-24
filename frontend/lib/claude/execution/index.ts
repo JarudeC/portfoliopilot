@@ -6,8 +6,6 @@
 export {
   validateSecurity,
   createSecurityConfig,
-  validatePrompt,
-  validateCode,
 } from './security';
 
 export type {

@@ -185,7 +185,7 @@ export function useBacktest(): UseBacktestReturn {
     currentAlgo: string,
     currentStrategy: GenerationResult | null
   ) {
-    if (!currentStrategy || !currentStrategy.weights) {
+    if (!currentStrategy || !currentStrategy.code) {
       alert("⚠️ No Claude Strategy Available\n\nPlease generate a Claude strategy first.");
       throw new Error("No Claude strategy generated.");
     }
@@ -204,10 +204,11 @@ export function useBacktest(): UseBacktestReturn {
     await new Promise(resolve => setTimeout(resolve, 500));
     setProgress(90);
 
-    const claudeWeights = currentStrategy.weights;
+    // Initialize with equal weights - actual weights computed dynamically by AI code during backtest
+    const defaultWeight = 1.0 / tickers.length;
     let portfolioWeights: Record<string, number> = {};
-    tickers.forEach((ticker, i) => {
-      portfolioWeights[ticker] = claudeWeights[i] || 0;
+    tickers.forEach((ticker) => {
+      portfolioWeights[ticker] = defaultWeight;
     });
 
     const nav: Record<string, number> = {};
@@ -220,7 +221,7 @@ export function useBacktest(): UseBacktestReturn {
       const calendarDaysBack = Math.round(currentParams.btHistDays * tradingDayMultiplier);
       const start = new Date(today.getTime() - calendarDaysBack * 86_400_000).toISOString().slice(0, 10);
 
-      const tickerDataPromises = tickers.map(async (ticker, index) => {
+      const tickerDataPromises = tickers.map(async (ticker) => {
         const res = await fetch(`/api/prices`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -233,7 +234,7 @@ export function useBacktest(): UseBacktestReturn {
 
         return {
           ticker,
-          weight: claudeWeights[index] || 0,
+          weight: defaultWeight,
           dates: payload.dates,
           prices: payload.prices
         };
