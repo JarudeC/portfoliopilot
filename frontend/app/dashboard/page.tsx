@@ -314,7 +314,11 @@ export default function Dashboard() {
           {!backtest.loading && backtest.progress === 100 && backtest.results.nav && backtest.results.weights && backtest.results.metrics && (
             <div className="space-y-6 mt-6">
               <div>
-                <h3 className="mb-2 text-sm font-semibold text-cyan-300">Final Portfolio Weights</h3>
+                <h3 className="mb-1 text-sm font-semibold text-cyan-300">Final Portfolio Weights</h3>
+                <p className="text-xs text-gray-400 mb-2">
+                  Weights from the final rebalancing of the backtest period.
+                  Hold for {backtest.results.usedParams?.evalWin ?? backtest.params.evalWin} days, then re-run backtest to get updated weights.
+                </p>
                 <PortfolioPieChart weights={backtest.results.weights} height={200} showTitle={false} />
               </div>
 

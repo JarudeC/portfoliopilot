@@ -34,6 +34,8 @@ Portfolio Pilot allows users to build and optimize investment portfolios using a
 - **Real-time Backtesting**: Test strategies against historical data with comprehensive performance metrics
 - **Interactive Visualizations**: View portfolio compositions, equity curves, and forecast charts
 - **Session History**: Track and compare all your strategy experiments
+- **Bring Your Own API Key**: Integrate your personal Claude API key with AES-256 encryption for secure storage
+- **Save & Load Strategies**: Save custom AI-generated strategies for reuse without regeneration
   
 **Home Page** - Landing page with hero section, feature showcase, algorithm overview, and call-to-action elements.
 
@@ -57,15 +59,23 @@ https://github.com/user-attachments/assets/5321954a-5d97-45d7-9c7b-e68909ab53b1
 
 ```
 .
-├─ frontend/          ← Next.js web application
-│   ├─ app/           ← App router pages and API routes
-│   ├─ components/    ← Reusable React components
-│   ├─ contexts/      ← React context providers
-│   └─ lib/           ← Utility functions and configs
-├─ backend/           ← FastAPI server
-│   ├─ backtesting/   ← Portfolio optimization strategies
-│   ├─ forecasting/   ← Time series forecasting models
-│   └─ utils/         ← Helper functions
+├─ frontend/              ← Next.js web application
+│   ├─ app/               ← App router pages and API routes
+│   │   ├─ api/           ← Next.js API routes (auth proxy, training logs, strategies)
+│   │   ├─ dashboard/     ← Main dashboard with hooks for forecast/backtest
+│   │   └─ history/       ← Training history page
+│   ├─ components/        ← Reusable React components
+│   │   ├─ claude/        ← AI strategy generation UI (popup, code editor)
+│   │   └─ ui/            ← Common UI components (toast, charts)
+│   ├─ contexts/          ← React context providers (auth)
+│   └─ lib/               ← Utility functions and configs
+│       ├─ claude/        ← Claude API client, code execution, security validation
+│       ├─ crypto/        ← AES-256 encryption for API keys
+│       └─ services/      ← Database services (strategies, training logs)
+├─ backend/               ← FastAPI server
+│   ├─ backtesting/       ← Portfolio optimization strategies
+│   ├─ forecasting/       ← Time series forecasting models (ARIMA, LSTM, Autoformer)
+│   └─ core/              ← Shared utilities (data loader)
 └─ README.md
 ```
 
@@ -74,7 +84,6 @@ https://github.com/user-attachments/assets/5321954a-5d97-45d7-9c7b-e68909ab53b1
 ### Backend Dependencies
 ```bash
 cd backend
-pip install torch==2.2.2+cpu --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 ```
 
@@ -118,7 +127,13 @@ https://github.com/user-attachments/assets/961e9f4f-aa9e-46d5-ab27-2525f24babf0
    - **Pre-built Models** - Select from classical algorithms (ARIMA, LSTM, Markowitz, etc.)
    - **Custom AI Strategy** - Describe your investment approach in natural language, and review/edit code produced by AI
 5. **Train & Analyze** - Execute your strategy and view comprehensive results
-6. **View History** - Review past training results and portfolio performance
+6. **Save Strategy** - Save custom AI strategies to your library for future use
+7. **View History** - Review past training results and portfolio performance
+
+**API Key Setup (Optional):**
+- Navigate to Settings to add your personal Claude API key
+- Keys are encrypted with AES-256-GCM before storage
+- Required only for Custom AI Strategy features
 
 ## Algorithms Implemented
 
@@ -138,5 +153,7 @@ https://github.com/user-attachments/assets/961e9f4f-aa9e-46d5-ab27-2525f24babf0
 - **Code Generation** - Anthropic Claude converts descriptions into executable TypeScript algorithms
 - **Dynamic Execution** - Real-time strategy compilation and backtesting
 - **Security Validation** - Multi-layer security checks ensure safe code execution
+- **Strategy Library** - Save successful strategies and load them for future use without re-prompting Claude
+- **Bring Your Own Key** - Use your personal Claude API key, encrypted with AES-256-GCM and stored securely
 
 All models use consistent evaluation parameters including transaction costs, rebalancing frequency, and lookback windows for fair comparison.

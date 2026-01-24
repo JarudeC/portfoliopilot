@@ -13,7 +13,17 @@ export const BTHIST_DAYS = [365, 1095, 1825];
 
 export interface BacktestParams {
   btHistDays: number;
+  /**
+   * Lookback window (in trading days) used to estimate covariances/trends for weight calculation.
+   * The algorithm analyzes this many days of historical data before each rebalancing decision.
+   * Example: lookBack=30 means use 30 days of price history to compute optimal weights.
+   */
   lookBack: number;
+  /**
+   * Evaluation window (in trading days) - how often to rebalance the portfolio.
+   * After calculating weights, hold them for this many days before recalculating.
+   * Example: evalWin=5 means rebalance every 5 trading days (~1 week).
+   */
   evalWin: number;
   tc: number;
 }
@@ -22,6 +32,7 @@ export interface BacktestResults {
   nav: Record<string, number> | null;
   weights: Record<string, number> | null;
   metrics: Record<string, string | number> | null;
+  usedParams: BacktestParams | null;
 }
 
 export interface UseBacktestReturn {
@@ -62,6 +73,7 @@ export function useBacktest(): UseBacktestReturn {
     nav: null,
     weights: null,
     metrics: null,
+    usedParams: null,
   });
   const [claudeStrategy, setClaudeStrategy] = useState<GenerationResult | null>(null);
   const [showPopup, setShowPopup] = useState(false);
@@ -161,7 +173,7 @@ export function useBacktest(): UseBacktestReturn {
 
     setLoading(true);
     setProgress(5);
-    setResults({ nav: null, weights: null, metrics: null });
+    setResults({ nav: null, weights: null, metrics: null, usedParams: null });
 
     try {
       if (isClaudeSelected) {
@@ -263,7 +275,7 @@ export function useBacktest(): UseBacktestReturn {
       };
     }
 
-    setResults({ nav, weights: portfolioWeights, metrics });
+    setResults({ nav, weights: portfolioWeights, metrics, usedParams: currentParams });
     setProgress(100);
     setLoading(false);
 
@@ -272,6 +284,19 @@ export function useBacktest(): UseBacktestReturn {
 
   /**
    * Calculate portfolio returns with dynamic AI-driven rebalancing.
+   *
+   * REBALANCING SIMULATION:
+   * The backtest simulates a trading strategy where the portfolio is rebalanced every `evalWin` days.
+   * At each rebalancing point, the algorithm uses `lookBack` days of historical data to calculate
+   * optimal portfolio weights, then holds those weights until the next rebalancing.
+   *
+   * Timeline example (lookBack=30, evalWin=5):
+   *   Days 0-29:  [lookBack period - used to estimate initial weights]
+   *   Day 30:     Calculate weights using days 0-29, then BUY according to weights
+   *   Days 30-34: HOLD - track daily returns using day-30 weights
+   *   Day 35:     Recalculate weights using days 5-34, then REBALANCE (sell/buy to match new weights)
+   *   Days 35-39: HOLD - track daily returns using day-35 weights
+   *   ... repeat until end of backtest period
    */
   async function calculatePortfolioReturns(
     allTickerData: Array<{ ticker: string; weight: number; dates: string[]; prices: number[] }>,
@@ -284,7 +309,9 @@ export function useBacktest(): UseBacktestReturn {
     const prices = allTickerData.map(t => t.prices);
     const nav: Record<string, number> = {};
 
+    // firstSig: First day we can generate a trading signal (need lookBack days of history first)
     const firstSig = currentParams.lookBack;
+    // numWin: Total number of rebalancing windows in the backtest period
     const numWin = Math.floor((dates.length - firstSig) / currentParams.evalWin);
 
     let portfolioValue = 1.0;
@@ -292,23 +319,33 @@ export function useBacktest(): UseBacktestReturn {
     let finalWeights: number[] | null = null;
     const portfolioReturns: number[] = [];
 
+    // Loop through each rebalancing window (each "step" = one evalWin period)
     for (let step = 0; step < numWin; step++) {
+      // windowStart: The day index where this evalWin period begins (and rebalancing occurs)
       const windowStart = firstSig + step * currentParams.evalWin;
+
+      // Calculate new portfolio weights using lookBack days of price history ending at windowStart
       const currentWeights = await calculateWindowWeights(allTickerData, dates, windowStart, currentParams, currentStrategy);
 
+      // Calculate transaction costs from trading (buying/selling to match new weights)
       let transactionCost = 0;
       if (prevWeights === null) {
+        // First rebalance: cost of initial purchase (all positions are new)
         transactionCost = currentWeights.reduce((sum: number, w: number) => sum + Math.abs(w), 0) * currentParams.tc;
       } else {
+        // Subsequent rebalances: cost proportional to weight changes (turnover)
         const turnover = currentWeights.reduce((sum: number, w: number, i: number) => sum + Math.abs(w - (prevWeights![i] || 0)), 0);
         transactionCost = turnover * currentParams.tc;
       }
 
+      // windowEnd: Last day of this evalWin period (before next rebalance)
       const windowEnd = Math.min(windowStart + currentParams.evalWin, dates.length);
 
+      // HOLD PERIOD: Track daily returns while holding the current weights for evalWin days
       for (let day = windowStart; day < windowEnd; day++) {
         if (day === 0) continue;
 
+        // Calculate weighted portfolio return for this day
         let dailyReturn = 0;
         for (let i = 0; i < allTickerData.length; i++) {
           if (day < prices[i].length && prices[i][day - 1] > 0) {
@@ -317,6 +354,7 @@ export function useBacktest(): UseBacktestReturn {
           }
         }
 
+        // Deduct transaction costs on the rebalancing day
         if (day === windowStart) dailyReturn -= transactionCost;
 
         portfolioReturns.push(dailyReturn);
@@ -325,11 +363,17 @@ export function useBacktest(): UseBacktestReturn {
       }
 
       prevWeights = [...currentWeights];
+      // Save the last calculated weights - these are displayed in the pie chart
       finalWeights = [...currentWeights];
     }
 
     const metrics = calculateMetrics(nav, portfolioReturns);
 
+    // Store the FINAL weights from the last rebalancing period.
+    // These are what gets displayed in the pie chart and represent the recommended
+    // allocation if the user wants to follow this strategy going forward.
+    // User action: Allocate portfolio to these weights, hold for evalWin days,
+    // then re-run backtest to get updated weights for the next period.
     if (finalWeights) {
       const totalWeight = finalWeights.reduce((sum, weight) => sum + Math.abs(weight), 0);
       if (totalWeight > 0) {
@@ -348,6 +392,10 @@ export function useBacktest(): UseBacktestReturn {
 
   /**
    * Calculate weights for a single evaluation window using AI strategy.
+   *
+   * This function is called at each rebalancing point. It extracts the lookBack period
+   * of historical prices ending at windowStart, then passes this data to the AI strategy
+   * to compute optimal portfolio weights for the upcoming evalWin holding period.
    */
   async function calculateWindowWeights(
     allTickerData: Array<{ ticker: string; weight: number; dates: string[]; prices: number[] }>,
@@ -356,10 +404,13 @@ export function useBacktest(): UseBacktestReturn {
     currentParams: BacktestParams,
     currentStrategy: GenerationResult | null
   ): Promise<number[]> {
+    // Extract lookBack days of price history ending at windowStart for weight calculation
+    // Example: if windowStart=35 and lookBack=30, use prices from days 5-34
     const lookbackStart = Math.max(0, windowStart - currentParams.lookBack);
     const lookbackData = allTickerData.map(tickerData => ({
       symbol: tickerData.ticker,
       price: tickerData.prices[windowStart - 1] || tickerData.prices[tickerData.prices.length - 1],
+      // Historical prices the AI uses to estimate covariances, trends, momentum, etc.
       lookbackPrices: tickerData.prices.slice(lookbackStart, windowStart),
       lookbackDates: dates.slice(lookbackStart, windowStart)
     }));
@@ -488,7 +539,7 @@ export function useBacktest(): UseBacktestReturn {
 
         if (data.status === "done") {
           clearInterval(poll);
-          setResults({ nav: data.nav, weights: data.weights, metrics: data.metrics });
+          setResults({ nav: data.nav, weights: data.weights, metrics: data.metrics, usedParams: currentParams });
           setProgress(100);
           setLoading(false);
         } else if (data.status === "error") {
