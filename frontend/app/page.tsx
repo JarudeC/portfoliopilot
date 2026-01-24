@@ -5,21 +5,22 @@ import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContexts";
-import { 
-  ChartBar, 
-  Bot, 
-  Rocket, 
-  Target, 
-  Zap, 
-  Lock, 
-  TrendingUp, 
-  Database, 
+import {
+  ChartBar,
+  Bot,
+  Rocket,
+  Target,
+  Zap,
+  Lock,
+  TrendingUp,
+  Database,
   Settings,
   Brain,
   BarChart3,
   Gauge,
   Palette,
-  RotateCcw
+  RotateCcw,
+  Bookmark
 } from "lucide-react";
 
 export default function Home() {
@@ -67,7 +68,7 @@ export default function Home() {
                 href="/auth/login"
                 className="border-2 border-[#4CC9F0] text-white hover:bg-[#4CC9F0] hover:text-[#0D1B2A] px-8 py-4 rounded-full transition-all duration-300 font-semibold"
               >
-                Sign In to Save Results
+                Sign In to Save Strategies & History
               </Link>
             )}
           </div>
@@ -119,7 +120,7 @@ export default function Home() {
             {
               icon: <Target className="w-8 h-8 text-[#4CC9F0]" />,
               title: "Stock Selection",
-              text: "Choose from DOW30 stocks with real-time data and market information.",
+              text: "Choose from DOW30 stocks with historical price data from Yahoo Finance.",
             },
             {
               icon: <Brain className="w-8 h-8 text-[#4CC9F0]" />,
@@ -144,7 +145,12 @@ export default function Home() {
             {
               icon: <Database className="w-8 h-8 text-[#4CC9F0]" />,
               title: "Session History",
-              text: "Track, compare, and analyze all your strategy experiments with persistent database storage.",
+              text: "View training history, compare performance across runs, and analyze past experiments.",
+            },
+            {
+              icon: <Bookmark className="w-8 h-8 text-[#4CC9F0]" />,
+              title: "Custom Strategy Library",
+              text: "Save your Claude-generated strategies and reuse them across sessions without re-prompting.",
             },
           ].map((f) => (
             <div
@@ -170,58 +176,78 @@ export default function Home() {
           <p className="text-lg text-gray-300 mb-12 text-center max-w-3xl mx-auto">
             Choose from proven classical algorithms or create custom strategies using natural language descriptions
           </p>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-            {/* Pre-built Algorithms */}
-            <div className="bg-[#0D1B2A] rounded-xl p-8 border border-[#4CC9F0]/20">
-              <h3 className="text-2xl font-bold mb-6 text-[#4CC9F0] flex items-center gap-3">
-                <Settings className="w-8 h-8" />
-                Pre-built Algorithms
-              </h3>
-              <div className="space-y-4">
+
+          {/* Pre-built Algorithms - Full Width */}
+          <div className="bg-[#0D1B2A] rounded-xl p-8 border border-[#4CC9F0]/20 mb-8">
+            <h3 className="text-2xl font-bold mb-6 text-[#4CC9F0] flex items-center gap-3">
+              <Settings className="w-8 h-8" />
+              Pre-built Algorithms
+            </h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Forecasting Models */}
+              <div>
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">Forecasting Models</div>
                 {[
-                  { name: "ARIMA", desc: "Auto-regressive integrated moving average for time series forecasting" },
-                  { name: "LSTM", desc: "Long short-term memory neural networks for sequence modeling" },
-                  { name: "Autoformer", desc: "Transformer-based model for long-term forecasting" },
-                  { name: "Markowitz", desc: "Mean-variance optimization with risk-aversion parameter" },
-                  { name: "GMVP", desc: "Global minimum variance portfolio optimization" },
-                  { name: "MarginTrader", desc: "Reinforcement learning agent using A2C algorithm" }
+                  { name: "ARIMA", desc: "Classical statistical model that captures auto-regressive patterns and moving averages to predict future prices" },
+                  { name: "LSTM", desc: "Deep learning neural network designed to learn long-term dependencies in sequential price data" },
+                  { name: "Autoformer", desc: "State-of-the-art transformer with auto-correlation mechanism for long-horizon time series forecasting" },
                 ].map((algo, index) => (
-                  <div key={index} className="border-l-4 border-[#4CC9F0] pl-4 py-2">
+                  <div key={index} className="border-l-4 border-[#4CC9F0] pl-4 py-2 mb-2">
+                    <div className="font-semibold text-white">{algo.name}</div>
+                    <div className="text-sm text-gray-400">{algo.desc}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Portfolio Optimization */}
+              <div>
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">Portfolio Optimization</div>
+                {[
+                  { name: "Naive Markowitz", desc: "Classic mean-variance optimization balancing expected returns against portfolio risk using covariance estimation" },
+                  { name: "GMVP", desc: "Global minimum variance portfolio that minimizes overall risk through covariance clustering and regularization" },
+                  { name: "PPN", desc: "Policy Portfolio Network - deep reinforcement learning that learns allocation policies directly from price data" },
+                  { name: "Margin Trader", desc: "A2C reinforcement learning agent supporting both long and short positions with configurable leverage" },
+                ].map((algo, index) => (
+                  <div key={index} className="border-l-4 border-[#4CC9F0] pl-4 py-2 mb-2">
                     <div className="font-semibold text-white">{algo.name}</div>
                     <div className="text-sm text-gray-400">{algo.desc}</div>
                   </div>
                 ))}
               </div>
             </div>
+          </div>
 
-            {/* AI-Generated Strategies */}
-            <div className="bg-gradient-to-br from-[#4CC9F0]/10 to-[#7209B7]/10 rounded-xl p-8 border border-[#4CC9F0]/30">
-              <h3 className="text-2xl font-bold mb-6 text-[#4CC9F0] flex items-center gap-3">
-                <Bot className="w-8 h-8" />
-                AI-Generated Strategies
-              </h3>
-              <div className="space-y-4">
-                <div className="bg-[#0D1B2A]/80 rounded-lg p-4 border border-[#4CC9F0]/20">
-                  <div className="font-semibold text-white mb-2">Natural Language Input</div>
-                  <div className="text-sm text-gray-300 italic mb-3">
-                    "Create a momentum strategy that allocates higher weights to stocks with strong 30-day performance but limits individual positions to 25%"
-                  </div>
-                  <div className="text-xs text-[#4CC9F0]">→ Generates TypeScript algorithm automatically</div>
+          {/* AI-Generated Strategies - Full Width */}
+          <div className="bg-gradient-to-br from-[#4CC9F0]/10 to-[#7209B7]/10 rounded-xl p-8 border border-[#4CC9F0]/30">
+            <h3 className="text-2xl font-bold mb-6 text-[#4CC9F0] flex items-center gap-3">
+              <Bot className="w-8 h-8" />
+              AI-Generated Strategies
+            </h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Example Input */}
+              <div className="bg-[#0D1B2A]/80 rounded-lg p-5 border border-[#4CC9F0]/20">
+                <div className="font-semibold text-white mb-3">Natural Language Input</div>
+                <div className="text-sm text-gray-300 italic mb-4">
+                  "Create a momentum strategy that allocates higher weights to stocks with strong 30-day performance but limits individual positions to 25%"
                 </div>
-                <div className="space-y-2 text-sm text-gray-300">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 bg-[#4CC9F0] rounded-full"></span>
-                    Security validation & code analysis
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 bg-[#4CC9F0] rounded-full"></span>
-                    Real-time compilation & execution
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 bg-[#4CC9F0] rounded-full"></span>
-                    Fallback strategies for reliability
-                  </div>
+                <div className="text-xs text-[#4CC9F0]">→ Generates TypeScript algorithm automatically</div>
+              </div>
+              {/* Features */}
+              <div className="flex flex-col justify-center space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="w-2 h-2 bg-[#4CC9F0] rounded-full"></span>
+                  <span className="text-gray-300">Security validation & code analysis</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-2 h-2 bg-[#4CC9F0] rounded-full"></span>
+                  <span className="text-gray-300">Real-time compilation & execution</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-2 h-2 bg-[#4CC9F0] rounded-full"></span>
+                  <span className="text-gray-300">Fallback strategies for reliability</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-2 h-2 bg-[#4CC9F0] rounded-full"></span>
+                  <span className="text-gray-300">Preview & edit generated code</span>
                 </div>
               </div>
             </div>
@@ -325,7 +351,7 @@ export default function Home() {
                 href="/auth/login"
                 className="border-2 border-[#4CC9F0] text-white hover:bg-[#4CC9F0] hover:text-[#0D1B2A] px-8 py-4 rounded-full transition-all duration-300 font-semibold"
               >
-                Sign Up to Save Results
+                Sign In to Save Strategies & History
               </Link>
             )}
           </div>
