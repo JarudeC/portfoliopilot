@@ -48,7 +48,7 @@ export default function HistoryPage() {
         params.set('type', filters.type)
       }
 
-      const res = await fetch(`/api/backtest/history?${params}`)
+      const res = await fetch(`/api/training-logs?${params}`)
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}))
         throw new Error(errorData.error || 'Failed to fetch training history')
@@ -96,12 +96,16 @@ export default function HistoryPage() {
       return false
     }
     
-    if (filters.dateFrom && new Date(log.created_at) < new Date(filters.dateFrom)) {
-      return false
+    if (filters.dateFrom) {
+      const logDate = new Date(log.created_at).setHours(0, 0, 0, 0)
+      const fromDate = new Date(filters.dateFrom).setHours(0, 0, 0, 0)
+      if (logDate < fromDate) return false
     }
-    
-    if (filters.dateTo && new Date(log.created_at) > new Date(filters.dateTo)) {
-      return false
+
+    if (filters.dateTo) {
+      const logDate = new Date(log.created_at).setHours(0, 0, 0, 0)
+      const toDate = new Date(filters.dateTo).setHours(23, 59, 59, 999)
+      if (logDate > toDate) return false
     }
     
     return true
@@ -109,7 +113,7 @@ export default function HistoryPage() {
 
   const handleDeleteLog = async (logId: string) => {
     try {
-      const res = await fetch(`/api/backtest/${logId}`, { method: 'DELETE' })
+      const res = await fetch(`/api/training-logs/${logId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete log')
       
       setLogs(prev => prev.filter(log => log.id !== logId))
@@ -123,7 +127,7 @@ export default function HistoryPage() {
 
     try {
       // Call bulk delete API endpoint
-      const res = await fetch('/api/backtest/bulk-delete', {
+      const res = await fetch('/api/training-logs/bulk-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ logIds })
@@ -147,7 +151,7 @@ export default function HistoryPage() {
 
     try {
       // Call delete all API endpoint  
-      const res = await fetch('/api/backtest/delete-all', {
+      const res = await fetch('/api/training-logs/delete-all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       })

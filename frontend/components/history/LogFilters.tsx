@@ -13,11 +13,22 @@ interface LogFiltersProps {
 }
 
 export default function LogFilters({ filters, onFiltersChange, availableModels }: LogFiltersProps) {
+  const today = new Date().toISOString().split('T')[0]
+
   const updateFilter = (key: string, value: string) => {
-    onFiltersChange({
-      ...filters,
-      [key]: value
-    })
+    const newFilters = { ...filters, [key]: value }
+
+    // Validate date constraints
+    if (key === 'dateFrom' && newFilters.dateTo && value > newFilters.dateTo) {
+      // If start date is after end date, clear end date
+      newFilters.dateTo = ''
+    }
+    if (key === 'dateTo' && newFilters.dateFrom && value < newFilters.dateFrom) {
+      // If end date is before start date, clear start date
+      newFilters.dateFrom = ''
+    }
+
+    onFiltersChange(newFilters)
   }
 
   const clearFilters = () => {
@@ -90,6 +101,7 @@ export default function LogFilters({ filters, onFiltersChange, availableModels }
               type="date"
               value={filters.dateFrom}
               onChange={(e) => updateFilter('dateFrom', e.target.value)}
+              max={filters.dateTo || today}
               className="select-dark w-full"
               placeholder="From"
             />
@@ -97,6 +109,8 @@ export default function LogFilters({ filters, onFiltersChange, availableModels }
               type="date"
               value={filters.dateTo}
               onChange={(e) => updateFilter('dateTo', e.target.value)}
+              min={filters.dateFrom || undefined}
+              max={today}
               className="select-dark w-full"
               placeholder="To"
             />

@@ -442,7 +442,7 @@ export function useBacktest(): UseBacktestReturn {
   ) {
     try {
       const claudeJobId = `claude-backtest-${Date.now()}`;
-      await fetch(`/api/backtest/${claudeJobId}`, {
+      await fetch(`/api/training-logs/${claudeJobId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
