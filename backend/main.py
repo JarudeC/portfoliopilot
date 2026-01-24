@@ -7,6 +7,7 @@ import logging
 from importlib import import_module
 from typing import Any, Dict, List, Literal, Callable, Tuple
 from uuid import uuid4
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 from fastapi import BackgroundTasks, FastAPI, HTTPException
@@ -51,26 +52,65 @@ def health():
 
 # Historical Price Data Endpoints
 
-class PriceRequest(BaseModel):
-    """Request schema for historical price data."""
-    ticker: str = Field(..., description="Stock ticker symbol (e.g., AAPL)")
+# NOTE: Single-ticker endpoint replaced by /prices/batch - kept for potential future use
+# class PriceRequest(BaseModel):
+#     """Request schema for historical price data."""
+#     ticker: str = Field(..., description="Stock ticker symbol (e.g., AAPL)")
+#     start: str = Field(..., description="Start date (YYYY-MM-DD)")
+#     end: str = Field(..., description="End date (YYYY-MM-DD)")
+#
+#
+# @app.post("/prices")
+# def get_prices(req: PriceRequest):
+#     """
+#     Fetch historical stock prices from Yahoo Finance.
+#
+#     This is a dedicated endpoint for fetching raw price data without
+#     running any forecasting models. Use this when you only need historical
+#     data (e.g., for Custom AI Strategy, data visualization, etc.)
+#
+#     Returns:
+#         ticker: The requested ticker symbol
+#         dates: List of date strings (YYYY-MM-DD)
+#         prices: List of adjusted close prices
+#     """
+#     from datetime import datetime
+#
+#     try:
+#         start_date = datetime.strptime(req.start, "%Y-%m-%d").date()
+#         end_date = datetime.strptime(req.end, "%Y-%m-%d").date()
+#     except ValueError as e:
+#         raise HTTPException(400, f"Invalid date format. Use YYYY-MM-DD. Error: {str(e)}")
+#
+#     try:
+#         series = load_series(req.ticker, start_date, end_date)
+#
+#         return {
+#             "ticker": req.ticker,
+#             "dates": series.index.strftime("%Y-%m-%d").tolist(),
+#             "prices": series.tolist()
+#         }
+#     except ValueError as e:
+#         raise HTTPException(400, str(e))
+#     except Exception as e:
+#         raise HTTPException(500, f"Failed to fetch prices: {str(e)}")
+
+
+class BatchPriceRequest(BaseModel):
+    """Request schema for batch historical price data."""
+    tickers: List[str] = Field(..., min_length=1, max_length=20)
     start: str = Field(..., description="Start date (YYYY-MM-DD)")
     end: str = Field(..., description="End date (YYYY-MM-DD)")
 
 
-@app.post("/prices")
-def get_prices(req: PriceRequest):
+@app.post("/prices/batch")
+def get_prices_batch(req: BatchPriceRequest):
     """
-    Fetch historical stock prices from Yahoo Finance.
-
-    This is a dedicated endpoint for fetching raw price data without
-    running any forecasting models. Use this when you only need historical
-    data (e.g., for Custom AI Strategy, data visualization, etc.)
+    Fetch historical stock prices for multiple tickers in parallel.
+    Uses ThreadPoolExecutor for concurrent yfinance calls.
 
     Returns:
-        ticker: The requested ticker symbol
-        dates: List of date strings (YYYY-MM-DD)
-        prices: List of adjusted close prices
+        Dict mapping ticker -> {dates, prices} or {error} if failed
     """
     from datetime import datetime
 
@@ -80,18 +120,27 @@ def get_prices(req: PriceRequest):
     except ValueError as e:
         raise HTTPException(400, f"Invalid date format. Use YYYY-MM-DD. Error: {str(e)}")
 
-    try:
-        series = load_series(req.ticker, start_date, end_date)
+    def fetch_single(ticker: str):
+        try:
+            series = load_series(ticker, start_date, end_date)
+            return ticker, {
+                "dates": series.index.strftime("%Y-%m-%d").tolist(),
+                "prices": series.tolist()
+            }
+        except Exception as e:
+            return ticker, {"error": str(e)}
 
-        return {
-            "ticker": req.ticker,
-            "dates": series.index.strftime("%Y-%m-%d").tolist(),
-            "prices": series.tolist()
-        }
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    except Exception as e:
-        raise HTTPException(500, f"Failed to fetch prices: {str(e)}")
+    results = {}
+    max_workers = min(len(req.tickers), 10)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(fetch_single, t): t for t in req.tickers}
+        for future in as_completed(futures):
+            ticker, data = future.result()
+            results[ticker] = data
+
+    return results
+
 
 # Portfolio algorithm mapping
 ALGO_MAP: Dict[str, str] = {

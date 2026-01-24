@@ -221,17 +221,21 @@ export function useBacktest(): UseBacktestReturn {
       const calendarDaysBack = Math.round(currentParams.btHistDays * tradingDayMultiplier);
       const start = new Date(today.getTime() - calendarDaysBack * 86_400_000).toISOString().slice(0, 10);
 
-      const tickerDataPromises = tickers.map(async (ticker) => {
-        const res = await fetch(`/api/prices`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ticker, start, end }),
-        });
+      // Fetch all prices in one batch request
+      const batchRes = await fetch(`/api/prices/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers, start, end }),
+      });
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const payload = await res.json();
-        if (!payload.dates || !payload.prices) throw new Error(`Invalid response for ${ticker}`);
+      if (!batchRes.ok) throw new Error(`Batch price fetch failed: HTTP ${batchRes.status}`);
+      const batchData = await batchRes.json();
 
+      const allTickerData = tickers.map((ticker) => {
+        const payload = batchData[ticker];
+        if (!payload || payload.error || !payload.dates || !payload.prices) {
+          throw new Error(`Invalid response for ${ticker}: ${payload?.error || 'missing data'}`);
+        }
         return {
           ticker,
           weight: defaultWeight,
@@ -239,8 +243,6 @@ export function useBacktest(): UseBacktestReturn {
           prices: payload.prices
         };
       });
-
-      const allTickerData = await Promise.all(tickerDataPromises);
 
       if (allTickerData.length > 0 && allTickerData[0].dates.length > 1) {
         const calculationResult = await calculatePortfolioReturns(allTickerData, tickers, portfolioWeights, currentParams, currentStrategy);

@@ -198,7 +198,7 @@ export function useForecast(): UseForecastReturn {
 
   /**
    * Execute Claude AI strategy forecast with real data.
-   * Fetches real prices from /api/prices and executes the AI-generated code.
+   * Fetches all prices in one batch request, then executes AI code for each ticker.
    */
   async function runClaudeForecast(
     tickers: string[],
@@ -215,28 +215,36 @@ export function useForecast(): UseForecastReturn {
       return;
     }
 
-    for (let i = 0; i < tickers.length; i++) {
-      const ticker = tickers[i];
+    // Fetch all prices in one batch request
+    const batchRes = await fetch(`/api/prices/batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers, start, end }),
+    });
+
+    if (!batchRes.ok) {
+      throw new Error(`Batch price fetch failed: HTTP ${batchRes.status}`);
+    }
+
+    const batchData = await batchRes.json();
+
+    // Process each ticker with the fetched data
+    for (const ticker of tickers) {
       try {
-        if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
+        const payload = batchData[ticker];
 
-        // Fetch real historical prices
-        const res = await fetch(`/api/prices`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ticker, start, end }),
-        });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const payload = await res.json();
-        if (!payload.dates || !payload.prices) throw new Error(`Invalid response for ${ticker}`);
+        if (!payload || payload.error || !payload.dates || !payload.prices) {
+          console.error(`Failed to fetch data for ${ticker}:`, payload?.error);
+          tempDataMap[ticker] = { historySeries: [], forecastSeries: [], algorithm: "Custom AI Strategy" };
+          onProgress();
+          continue;
+        }
 
         const historySeries = payload.dates.map((date: string, index: number) => ({
           date,
           price: payload.prices[index]
         }));
 
-        // Build stockData with real prices for AI code execution
         const stockData = [{
           symbol: ticker,
           price: payload.prices[payload.prices.length - 1],
@@ -244,16 +252,13 @@ export function useForecast(): UseForecastReturn {
           lookbackDates: payload.dates
         }];
 
-        // Execute the AI-generated code with real data
         const result = await executeUserCode(
           currentStrategy.code,
           'forecast',
           stockData,
-          undefined, // securityConfig
+          undefined,
           currentParams.forecastDays,
-          {
-            historyDays: currentParams.histDays
-          }
+          { historyDays: currentParams.histDays }
         );
 
         let forecastSeries = [];
@@ -267,7 +272,6 @@ export function useForecast(): UseForecastReturn {
             price: isMultiplier ? lastPrice * pred.price : pred.price
           }));
         } else {
-          // Fallback if execution failed
           forecastSeries = generateFallbackForecast(payload.prices, end, currentParams.forecastDays);
         }
 
@@ -275,7 +279,7 @@ export function useForecast(): UseForecastReturn {
         onProgress();
 
       } catch (err) {
-        console.error(`Custom AI data fetch failed for ${ticker}:`, err);
+        console.error(`Custom AI processing failed for ${ticker}:`, err);
         tempDataMap[ticker] = { historySeries: [], forecastSeries: [], algorithm: "Custom AI Strategy" };
         onProgress();
       }
