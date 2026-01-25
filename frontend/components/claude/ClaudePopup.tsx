@@ -6,6 +6,7 @@ import { generateCodeOnly, type GenerationResult } from "../../lib/claude";
 import CodeEditor from './CodeEditor';
 import LoadStrategyModal from './LoadStrategyModal';
 import type { HydratedStrategy } from '@/lib/types/strategy';
+import { useToast } from '@/components/ui/Toast';
 
 /**
  * Extract user-friendly error message from any error.
@@ -81,6 +82,9 @@ export default function ClaudePopup({
   mode,
   dashboardParams = {}
 }: ClaudePopupProps) {
+  // Toast notifications
+  const { showWarning } = useToast();
+
   // Dynamic content based on mode
   const examples = mode === 'forecast' ? FORECAST_EXAMPLES : BACKTEST_EXAMPLES;
   const title = mode === 'forecast' ? 'Custom AI Forecast Strategy' : 'Custom AI Backtest Strategy';
@@ -524,7 +528,13 @@ Press Ctrl+Enter to generate, Esc to close`;
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowLoadModal(true)}
+                  onClick={() => {
+                    if (!hasStocksSelected) {
+                      showWarning("No Stocks Selected", "Please select at least one stock before loading a strategy.");
+                      return;
+                    }
+                    setShowLoadModal(true);
+                  }}
                   disabled={loading}
                   className="text-xs text-[#4CC9F0] hover:text-[#4CC9F0]/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
