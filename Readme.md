@@ -1,5 +1,7 @@
 # Portfolio Pilot - AI-Enhanced Full Stack Portfolio Construction Platform
 
+**Accepted to AAAI 2026 Demonstration Program** | [Paper](AAAI_paper/PortfolioPilot%20Demo%20Paper.pdf) | [AAAI-26 Demo Program](https://aaai.org/conference/aaai/aaai-26/aaai-26-demonstration-program/)
+
 A full-stack web application for portfolio optimization using machine learning, classical algorithms, and custom AI-generated strategies powered by Anthropic Claude.
 
 Youtube Video: https://youtu.be/j-r4ZIsYnZw
