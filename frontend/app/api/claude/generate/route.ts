@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   generateCodeOnlyServer as generateCodeOnly,
-  createSecurityConfig,
   ClaudeError,
   ClaudeApiError,
   TimeoutError,
@@ -164,7 +163,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return response;
     }
     
-    // 4. Parse Request Body (client.ts already validates)
+    // 4. Parse Request Body
     let requestBody: any;
     try {
       requestBody = await request.json();
@@ -175,10 +174,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const { userDescription, stockData, mode, securityConfig, forecastDays } = requestBody;
 
-    // 5. Create security config (validation happens in generateCodeOnly)
-    const secConfig = securityConfig ? createSecurityConfig(securityConfig) : createSecurityConfig({});
-
-    // 6. Initialize Claude API
+    // 5. Initialize Claude API
     let anthropic: Anthropic;
     try {
       anthropic = new Anthropic({
@@ -190,7 +186,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return createErrorResponse(error);
     }
     
-    // 7. Create Claude API Call Function
+    // Function Definitions (executed in step 6)
+    // claudeApiCall: Sends prompt to Anthropic API, returns generated text
     const claudeApiCall = async (prompt: string): Promise<string> => {
       try {
         const message = await anthropic.messages.create({
@@ -226,19 +223,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     };
     
-    // 8. Generate code with timeout
+    // processRequest: Wraps generateCodeOnly with timeout protection using Promise.race
     const processRequest = async (): Promise<{ success: boolean; code?: string; error?: string }> => {
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new TimeoutError('Request timeout', REQUEST_TIMEOUT, requestId)), REQUEST_TIMEOUT);
       });
 
       return Promise.race([
-        generateCodeOnly(userDescription, stockData, mode, claudeApiCall, secConfig, forecastDays || 30),
+        generateCodeOnly(userDescription, stockData, mode, claudeApiCall, securityConfig, forecastDays || 30),
         timeoutPromise
       ]);
     };
     
-    // 9. Execute Request
+    // 6. Execute Code Generation
     let result: { success: boolean; code?: string; error?: string };
     try {
       result = await processRequest();
@@ -256,7 +253,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return createErrorResponse(generationError.message || 'Generation failed', 500);
     }
 
-    // 10. Return Success Response
+    // 7. Return Success Response
     return NextResponse.json({
       success: result.success,
       code: result.code,
@@ -268,7 +265,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
     
   } catch (error: any) {
-    // 11. Global Error Handler
+    // 8. Global Error Handler
     console.error('Unexpected error in Claude API route:', error);
     
     if (error instanceof ClaudeError) {
