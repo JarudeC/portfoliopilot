@@ -1,7 +1,7 @@
 // Service for managing training session logs in database
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { createClient as createBrowserClient } from '@/lib/supabase/client';
-import { TrainingLog, CreateTrainingLogData, HydratedTrainingLog, ForecastResult, BacktestResult, ChartConfig } from '@/lib/types/training';
+import { TrainingLog, CreateTrainingLogData, HydratedTrainingLog, LazyTrainingLog, ForecastResult, BacktestResult, ChartConfig } from '@/lib/types/training';
 import { StorageService } from './storage';
 
 export class TrainingLogService {
@@ -130,6 +130,31 @@ export class TrainingLogService {
    */
   async hydrateLogs(logs: TrainingLog[]): Promise<HydratedTrainingLog[]> {
     return Promise.all(logs.map(log => this.hydrateLog(log)));
+  }
+
+  /**
+   * Convert a training log to lazy format with signed URLs for on-demand fetching
+   */
+  async toLazyLog(log: TrainingLog): Promise<LazyTrainingLog> {
+    const [resultsSignedUrl, chartsSignedUrl] = await Promise.all([
+      log.results_url ? this.storageService.getSignedUrl(log.results_url) : null,
+      log.charts_url ? this.storageService.getSignedUrl(log.charts_url) : null,
+    ]);
+
+    const { results_url, charts_url, ...rest } = log;
+
+    return {
+      ...rest,
+      results_signed_url: resultsSignedUrl || undefined,
+      charts_signed_url: chartsSignedUrl || undefined,
+    };
+  }
+
+  /**
+   * Convert multiple training logs to lazy format
+   */
+  async toLazyLogs(logs: TrainingLog[]): Promise<LazyTrainingLog[]> {
+    return Promise.all(logs.map(log => this.toLazyLog(log)));
   }
 
   async getUserLogs(userId?: string, limit = 50, offset = 0): Promise<TrainingLog[]> {

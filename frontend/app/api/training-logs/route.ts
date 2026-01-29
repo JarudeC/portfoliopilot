@@ -33,10 +33,10 @@ export async function GET(req: NextRequest) {
       logs = await logService.getUserLogs(user.id, limit, offset);
     }
 
-    // Hydrate logs to load results and charts from storage
-    const hydratedLogs = await logService.hydrateLogs(logs || []);
+    // Return lazy logs with signed URLs for on-demand fetching
+    const lazyLogs = await logService.toLazyLogs(logs || []);
 
-    return NextResponse.json({ logs: hydratedLogs });
+    return NextResponse.json({ logs: lazyLogs });
   } catch (error) {
     console.error('Failed to fetch training history:', error);
     

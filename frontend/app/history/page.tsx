@@ -6,12 +6,12 @@ import { useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { LogList, LogFilters } from '@/components/history'
-import { HydratedTrainingLog } from '@/lib/types/training'
+import { LazyTrainingLog } from '@/lib/types/training'
 
 export default function HistoryPage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
-  const [logs, setLogs] = useState<HydratedTrainingLog[]>([])
+  const [logs, setLogs] = useState<LazyTrainingLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filters, setFilters] = useState({
@@ -62,8 +62,8 @@ export default function HistoryPage() {
       } else {
         // Filter out any logs that already exist to prevent duplicates
         setLogs(prev => {
-          const existingIds = new Set(prev.map((log: HydratedTrainingLog) => log.id))
-          const newLogs = data.logs.filter((log: HydratedTrainingLog) => !existingIds.has(log.id))
+          const existingIds = new Set(prev.map((log: LazyTrainingLog) => log.id))
+          const newLogs = data.logs.filter((log: LazyTrainingLog) => !existingIds.has(log.id))
           return [...prev, ...newLogs]
         })
       }

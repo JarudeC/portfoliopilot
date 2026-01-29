@@ -20,6 +20,12 @@ export interface HydratedTrainingLog extends Omit<TrainingLog, 'results_url' | '
   charts?: ChartConfig[];
 }
 
+// Lazy-loaded log with signed URLs for on-demand fetching
+export interface LazyTrainingLog extends Omit<TrainingLog, 'results_url' | 'charts_url'> {
+  results_signed_url?: string;
+  charts_signed_url?: string;
+}
+
 export interface ForecastResult {
   predictions: Array<{
     date: string;
