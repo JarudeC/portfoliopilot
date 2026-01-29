@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
-import { HydratedTrainingLog } from '@/lib/types/training'
+import { useState, useEffect } from 'react'
+import { LazyTrainingLog } from '@/lib/types/training'
 import LogDetails from './LogDetails'
 import DeleteConfirmModal from '@/components/ui/DeleteConfirmModal'
 
 interface LogItemProps {
-  log: HydratedTrainingLog
+  log: LazyTrainingLog
   isExpanded: boolean
   onToggleExpanded: () => void
   onDelete: () => void
@@ -15,17 +15,49 @@ interface LogItemProps {
   onToggleSelect?: () => void
 }
 
-export default function LogItem({ 
-  log, 
-  isExpanded, 
-  onToggleExpanded, 
-  onDelete, 
-  isSelectMode = false, 
-  isSelected = false, 
-  onToggleSelect 
+export default function LogItem({
+  log,
+  isExpanded,
+  onToggleExpanded,
+  onDelete,
+  isSelectMode = false,
+  isSelected = false,
+  onToggleSelect
 }: LogItemProps) {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [detailsData, setDetailsData] = useState<{ results: any; charts?: any } | null>(null)
+  const [detailsLoading, setDetailsLoading] = useState(false)
+  const [detailsError, setDetailsError] = useState<string | null>(null)
+
+  // Fetch blob data when expanded
+  useEffect(() => {
+    if (!isExpanded || detailsData || detailsLoading) return
+
+    const fetchDetails = async () => {
+      setDetailsLoading(true)
+      setDetailsError(null)
+
+      try {
+        const [resultsRes, chartsRes] = await Promise.all([
+          log.results_signed_url ? fetch(log.results_signed_url) : null,
+          log.charts_signed_url ? fetch(log.charts_signed_url) : null,
+        ])
+
+        const results = resultsRes?.ok ? await resultsRes.json() : { predictions: [] }
+        const charts = chartsRes?.ok ? await chartsRes.json() : undefined
+
+        setDetailsData({ results, charts })
+      } catch (err) {
+        setDetailsError('Failed to load details')
+        console.error('Failed to fetch log details:', err)
+      } finally {
+        setDetailsLoading(false)
+      }
+    }
+
+    fetchDetails()
+  }, [isExpanded, detailsData, detailsLoading, log.results_signed_url, log.charts_signed_url])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -185,7 +217,18 @@ export default function LogItem({
 
       {isExpanded && (
         <div className="border-t border-[#1B263B]">
-          <LogDetails log={log} />
+          {detailsLoading && (
+            <div className="p-8 text-center text-gray-400">
+              <div className="w-6 h-6 border-2 border-gray-400 border-t-[#4CC9F0] rounded-full animate-spin mx-auto mb-2" />
+              Loading details...
+            </div>
+          )}
+          {detailsError && (
+            <div className="p-8 text-center text-red-400">{detailsError}</div>
+          )}
+          {detailsData && (
+            <LogDetails log={{ ...log, results: detailsData.results, charts: detailsData.charts }} />
+          )}
         </div>
       )}
 
