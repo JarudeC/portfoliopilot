@@ -30,24 +30,53 @@ export default function LogItem({
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [detailsError, setDetailsError] = useState<string | null>(null)
 
-  // Fetch blob data when expanded
+  // Fetch blob data when expanded, with automatic refresh if signed URLs expired
   useEffect(() => {
     if (!isExpanded || detailsData || detailsLoading) return
+
+    const fetchWithUrls = async (resultsUrl: string | undefined, chartsUrl: string | undefined) => {
+      const [resultsRes, chartsRes] = await Promise.all([
+        resultsUrl ? fetch(resultsUrl) : null,
+        chartsUrl ? fetch(chartsUrl) : null,
+      ])
+
+      // Check if URLs expired (401/403)
+      const resultsExpired = resultsRes && (resultsRes.status === 401 || resultsRes.status === 403)
+      const chartsExpired = chartsRes && (chartsRes.status === 401 || chartsRes.status === 403)
+
+      if (resultsExpired || chartsExpired) {
+        return { expired: true }
+      }
+
+      const results = resultsRes?.ok ? await resultsRes.json() : { predictions: [] }
+      const charts = chartsRes?.ok ? await chartsRes.json() : undefined
+
+      return { expired: false, results, charts }
+    }
 
     const fetchDetails = async () => {
       setDetailsLoading(true)
       setDetailsError(null)
 
       try {
-        const [resultsRes, chartsRes] = await Promise.all([
-          log.results_signed_url ? fetch(log.results_signed_url) : null,
-          log.charts_signed_url ? fetch(log.charts_signed_url) : null,
-        ])
+        // First attempt with existing signed URLs
+        let result = await fetchWithUrls(log.results_signed_url, log.charts_signed_url)
 
-        const results = resultsRes?.ok ? await resultsRes.json() : { predictions: [] }
-        const charts = chartsRes?.ok ? await chartsRes.json() : undefined
+        // If expired, fetch fresh signed URLs from API and retry
+        if (result.expired) {
+          const res = await fetch(`/api/training-logs/${log.id}/signed-urls`)
+          if (!res.ok) {
+            throw new Error('Failed to refresh signed URLs')
+          }
+          const freshUrls = await res.json()
+          result = await fetchWithUrls(freshUrls.results_signed_url, freshUrls.charts_signed_url)
 
-        setDetailsData({ results, charts })
+          if (result.expired) {
+            throw new Error('Signed URLs still invalid after refresh')
+          }
+        }
+
+        setDetailsData({ results: result.results, charts: result.charts })
       } catch (err) {
         setDetailsError('Failed to load details')
         console.error('Failed to fetch log details:', err)
@@ -57,7 +86,7 @@ export default function LogItem({
     }
 
     fetchDetails()
-  }, [isExpanded, detailsData, detailsLoading, log.results_signed_url, log.charts_signed_url])
+  }, [isExpanded, detailsData, detailsLoading, log.id, log.results_signed_url, log.charts_signed_url])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
