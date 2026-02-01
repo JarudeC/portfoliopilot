@@ -125,8 +125,11 @@ class LSTMForecaster(BaseForecaster):
         """
         logger.info(f"Starting LSTM forecast for {req.ticker}")
 
-        # Load data
-        series = load_series(req.ticker, req.start, req.end)
+        # Use pre-fetched series if available, otherwise load
+        if req._series is not None:
+            series = req._series
+        else:
+            series = load_series(req.ticker, req.start, req.end)
         hist_vals = series.values.astype('float32')
 
         # Adjust window if needed for limited data

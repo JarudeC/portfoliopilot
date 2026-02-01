@@ -4,17 +4,18 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime, timedelta
 from importlib import import_module
 from typing import Any, Dict, List, Literal, Callable, Tuple
 from uuid import uuid4
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from core.data_loader import load_prices, load_series
+from core.data_loader import load_series, load_series_batch
 
 # Configure logging to show INFO level messages
 logging.basicConfig(
@@ -25,6 +26,7 @@ logging.basicConfig(
 # Forecasting model imports
 from forecasting import arima, autoformer, lstm
 from forecasting.schemas import ForecastRequest
+from forecasting.metrics import calculate_mse, calculate_mae
 
 
 app = FastAPI()
@@ -107,13 +109,10 @@ class BatchPriceRequest(BaseModel):
 def get_prices_batch(req: BatchPriceRequest):
     """
     Fetch historical stock prices for multiple tickers in parallel.
-    Uses ThreadPoolExecutor for concurrent yfinance calls.
 
     Returns:
         Dict mapping ticker -> {dates, prices} or {error} if failed
     """
-    from datetime import datetime
-
     try:
         start_date = datetime.strptime(req.start, "%Y-%m-%d").date()
         end_date = datetime.strptime(req.end, "%Y-%m-%d").date()
@@ -180,8 +179,17 @@ def launch_backtest(req: BacktestRequest, bt: BackgroundTasks):
 
 
 def _backtest_worker(jid: str, req: BacktestRequest):
+    """
+    Background worker for portfolio backtesting.
+    """
     try:
-        prices = load_prices(req.tickers, req.hist_days)
+        # Convert hist_days to date range (matching frontend's tradingDayMultiplier logic)
+        end_date = date.today()
+        calendar_days = int(req.hist_days * 1.43)  # Trading days to calendar days
+        start_date = end_date - timedelta(days=calendar_days)
+
+        # Fetch prices using unified batch loader (returns DataFrame for backtest)
+        prices = load_series_batch(req.tickers, start_date, end_date, return_errors=False)
         api_mod = import_module(ALGO_MAP[req.algo])
         nav, weights, metrics = api_mod.run(
             prices,
@@ -228,24 +236,115 @@ _FORECASTERS: Dict[str, Callable[[ForecastRequest], Tuple[List[str], List[float]
 }
 
 
-@app.post("/forecast/{algo}")
-def forecast(algo: Literal["arima", "lstm", "autoformer"], req: ForecastRequest):
-    """
-    Generate price forecast using the specified algorithm.
+class BatchForecastRequest(BaseModel):
+    """Request schema for batch forecasting."""
+    tickers: List[str] = Field(..., min_length=1, max_length=20)
+    start: str = Field(..., description="Start date (YYYY-MM-DD)")
+    end: str = Field(..., description="End date (YYYY-MM-DD)")
+    horizon: int = Field(..., ge=1, le=60, description="Forecast horizon in days")
+    calculate_metrics: bool = Field(False, description="Calculate MSE/MAE via 70/30 backtest")
 
-    Runs the forecasting model synchronously and returns historical data
-    along with predicted values for the requested horizon.
+
+@app.post("/forecast/{algo}/batch")
+def forecast_batch(algo: Literal["arima", "lstm", "autoformer"], req: BatchForecastRequest):
+    """
+    Generate price forecasts for multiple tickers.
+
+    Fetches prices in parallel via load_series_batch(), then runs models sequentially
+    (CPU-bound work doesn't benefit from threading due to Python GIL).
+
+    When calculate_metrics=True, performs 70/30 backtest to compute MSE/MAE:
+    - Splits historical data 70% train / 30% test
+    - Trains model on 70%, predicts for test period length
+    - Compares predictions to actual test prices
+
+    Returns:
+        Dict mapping ticker -> {history_dates, history_values, forecast_dates, forecast_values, metrics?}
+        or {error} if forecasting failed for that ticker
     """
     if algo not in _FORECASTERS:
         raise HTTPException(400, "Unknown forecasting algorithm")
 
     try:
-        hd, hv, fd, fv = _FORECASTERS[algo](req)
-        return {
-            "history_dates": hd,
-            "history_values": hv,
-            "forecast_dates": fd,
-            "forecast_values": fv,
-        }
-    except Exception as e:
-        raise HTTPException(500, f"Forecasting error: {str(e)}")
+        start_date = datetime.strptime(req.start, "%Y-%m-%d").date()
+        end_date = datetime.strptime(req.end, "%Y-%m-%d").date()
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid date format. Use YYYY-MM-DD. Error: {str(e)}")
+
+    # Fetch all prices in parallel (I/O bound - benefits from threading)
+    batch_prices = load_series_batch(req.tickers, start_date, end_date, return_errors=True)
+
+    # Run forecasts sequentially (CPU bound - GIL prevents true parallelism)
+    forecaster = _FORECASTERS[algo]
+    results = {}
+
+    for ticker in req.tickers:
+        price_data = batch_prices.get(ticker)
+
+        # Handle price fetch errors
+        if price_data is None or (isinstance(price_data, dict) and "error" in price_data):
+            results[ticker] = price_data or {"error": "No data"}
+            continue
+
+        try:
+            freq = ForecastRequest(
+                ticker=ticker,
+                start=start_date,
+                end=end_date,
+                horizon=req.horizon
+            )
+            # Pydantic v2 PrivateAttr requires object.__setattr__ for assignment
+            object.__setattr__(freq, '_series', price_data)
+            hd, hv, fd, fv = forecaster(freq)
+
+            result = {
+                "history_dates": hd,
+                "history_values": hv,
+                "forecast_dates": fd,
+                "forecast_values": fv
+            }
+
+            # Calculate metrics via 70/30 backtest if requested
+            if req.calculate_metrics and len(hv) >= 20:
+                try:
+                    split_idx = int(len(hv) * 0.7)
+                    train_values = hv[:split_idx]
+                    test_values = hv[split_idx:]
+                    train_dates = hd[:split_idx]
+
+                    if len(test_values) >= 5:
+                        # Create backtest request with training period only
+                        import pandas as pd
+                        train_start = datetime.strptime(train_dates[0], "%Y-%m-%d").date()
+                        train_end = datetime.strptime(train_dates[-1], "%Y-%m-%d").date()
+
+                        backtest_req = ForecastRequest(
+                            ticker=ticker,
+                            start=train_start,
+                            end=train_end,
+                            horizon=len(test_values)
+                        )
+                        # Pass training data as pre-fetched series
+                        train_series = pd.Series(train_values, index=pd.to_datetime(train_dates))
+                        object.__setattr__(backtest_req, '_series', train_series)
+
+                        # Generate backtest predictions
+                        _, _, _, backtest_predictions = forecaster(backtest_req)
+
+                        # Ensure lengths match
+                        min_len = min(len(backtest_predictions), len(test_values))
+                        preds = backtest_predictions[:min_len]
+                        actuals = test_values[:min_len]
+
+                        result["metrics"] = {
+                            "mse": calculate_mse(preds, actuals),
+                            "mae": calculate_mae(preds, actuals)
+                        }
+                except Exception as metrics_err:
+                    result["metrics"] = {"mse": 0, "mae": 0, "error": str(metrics_err)}
+
+            results[ticker] = result
+        except Exception as e:
+            results[ticker] = {"error": str(e)}
+
+    return results

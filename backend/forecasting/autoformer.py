@@ -391,8 +391,11 @@ class AutoformerForecaster(BaseForecaster):
         try:
             logger.info(f"Starting Autoformer forecast for {req.ticker}")
 
-            # Load data
-            series = load_series(req.ticker, req.start, req.end)
+            # Use pre-fetched series if available, otherwise load
+            if req._series is not None:
+                series = req._series
+            else:
+                series = load_series(req.ticker, req.start, req.end)
 
             # Validate sufficient data
             min_required = self.config.seq_len + 10

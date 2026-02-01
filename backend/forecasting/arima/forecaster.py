@@ -241,8 +241,11 @@ class ARIMAForecaster:
             RuntimeError: If forecasting fails completely
         """
         try:
-            # Load data
-            series = load_series(req.ticker, req.start, req.end)
+            # Use pre-fetched series if available, otherwise load
+            if req._series is not None:
+                series = req._series
+            else:
+                series = load_series(req.ticker, req.start, req.end)
 
             # Validate sufficient data
             if len(series) < self.config.min_observations:

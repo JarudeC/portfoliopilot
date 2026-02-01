@@ -5,6 +5,7 @@
 import { useState, useCallback } from 'react';
 import { useToast } from '../../../components/ui/Toast';
 import { type GenerationResult } from '../../../lib/claude/client';
+import { calculateBacktestMetrics } from '../../../lib/utils/backtestMetrics';
 
 export const BACKTEST_ALGOS = ["Naive Markowitz", "GVMP", "PPN", "Margin Trader", "Custom AI Strategy"];
 export const LOOKBACKS = [30, 60, 90];
@@ -367,7 +368,7 @@ export function useBacktest(): UseBacktestReturn {
       finalWeights = [...currentWeights];
     }
 
-    const metrics = calculateMetrics(nav, portfolioReturns);
+    const metrics = calculateBacktestMetrics(nav, portfolioReturns);
 
     // Store the FINAL weights from the last rebalancing period.
     // These are what gets displayed in the pie chart and represent the recommended
@@ -443,41 +444,6 @@ export function useBacktest(): UseBacktestReturn {
     } catch (error) {
       return new Array(allTickerData.length).fill(1.0 / allTickerData.length);
     }
-  }
-
-  /**
-   * Calculate performance metrics from NAV and returns series.
-   */
-  function calculateMetrics(
-    nav: Record<string, number>,
-    portfolioReturns: number[]
-  ): Record<string, string | number> {
-    const navValues = Object.values(nav);
-    const totalReturn = (navValues[navValues.length - 1] - navValues[0]) / navValues[0];
-    const avgDailyReturn = portfolioReturns.reduce((sum, ret) => sum + ret, 0) / portfolioReturns.length;
-    const dailyVol = Math.sqrt(
-      portfolioReturns.reduce((sum, ret) => sum + Math.pow(ret - avgDailyReturn, 2), 0) / (portfolioReturns.length - 1)
-    );
-
-    const tradingDays = 252;
-    const annualReturn = Math.pow(1 + totalReturn, tradingDays / portfolioReturns.length) - 1;
-    const annualVol = dailyVol * Math.sqrt(tradingDays);
-    const sharpeRatio = dailyVol > 0 ? (avgDailyReturn / dailyVol * Math.sqrt(tradingDays)) : 0;
-
-    const negativeReturns = portfolioReturns.filter(ret => ret < avgDailyReturn);
-    const downsideStd = negativeReturns.length > 0
-      ? Math.sqrt(negativeReturns.reduce((sum, ret) => sum + Math.pow(ret - avgDailyReturn, 2), 0) / negativeReturns.length)
-      : 0;
-    const sortinoRatio = downsideStd > 0 ? (avgDailyReturn / downsideStd * Math.sqrt(tradingDays)) : 0;
-
-    return {
-      'Return': `${(totalReturn * 100).toFixed(2)}%`,
-      'AnnualReturn': `${(annualReturn * 100).toFixed(2)}%`,
-      'DailyVol': `${(dailyVol * 100).toFixed(2)}%`,
-      'AnnualVol': `${(annualVol * 100).toFixed(2)}%`,
-      'Sharpe': `${sharpeRatio.toFixed(2)}`,
-      'Sortino': `${sortinoRatio.toFixed(2)}`
-    };
   }
 
   /**

@@ -1,16 +1,18 @@
 """Unified data loading utilities for financial time series.
 
 This module provides the single source of truth for fetching stock price data
-from Yahoo Finance. It is used by both forecasting and backtesting modules.
+from Yahoo Finance. Used by forecasting, backtesting, and price endpoints.
 
 Functions:
-    load_series: Load price data for a single ticker (used by forecasting)
-    load_prices: Load price data for multiple tickers (used by backtesting)
+    load_series: Load price data for a single ticker (base function)
+    load_series_batch: Load price data for multiple tickers in parallel using ThreadPoolExecutor
+                       (used by /prices/batch, /forecast/{algo}/batch, and backtest)
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
-from typing import List
+from typing import Dict, List, Union
 
 import pandas as pd
 import yfinance as yf
@@ -110,41 +112,64 @@ def load_series(
             ) from e
 
 
-def load_prices(tickers: List[str], days: int) -> pd.DataFrame:
+def load_series_batch(
+    tickers: List[str],
+    start: date,
+    end: date,
+    return_errors: bool = False
+) -> Union[pd.DataFrame, Dict[str, Union[pd.Series, Dict[str, str]]]]:
     """
-    Load historical price data for multiple tickers.
+    Load price data for multiple tickers in parallel using ThreadPoolExecutor.
 
-    This function is used by portfolio backtesting algorithms to fetch
-    multi-asset price histories.
+    This is the primary batch loading function, used by:
+        - /prices/batch endpoint (returns dict with errors)
+        - /forecast/{algo}/batch endpoint (returns dict with errors)
+        - _backtest_worker (returns DataFrame)
 
     Args:
         tickers: List of ticker symbols (e.g., ["AAPL", "MSFT", "GOOGL"])
-        days: Number of days of historical data to fetch
+        start: Inclusive start date for data window
+        end: Exclusive end date for data window
+        return_errors: If True, return dict with {ticker: Series or {error: msg}}
+                      If False, return DataFrame (drops failed tickers)
 
     Returns:
-        DataFrame with tickers as columns and dates as index
+        If return_errors=True: Dict mapping ticker -> Series or {"error": str}
+        If return_errors=False: DataFrame with tickers as columns, dates as index
 
     Notes:
-        - Used by portfolio backtesting module (not forecasting)
-        - Automatically drops NaN values
-        - Flattens MultiIndex columns from yfinance
+        - Uses ThreadPoolExecutor for parallel I/O (network calls release GIL)
+        - Max 10 workers to avoid rate limiting
+        - Reuses load_series() for consistent single-ticker logic
     """
-    logger.info(f"Loading {days} days of data for {len(tickers)} tickers")
+    logger.info(f"Loading batch data for {len(tickers)} tickers from {start} to {end}")
 
-    df = yf.download(
-        " ".join(tickers),
-        period=f"{days}d",
-        interval="1d",
-        auto_adjust=True,
-        progress=False
-    )["Close"]
+    results: Dict[str, Union[pd.Series, Dict[str, str]]] = {}
+    max_workers = min(len(tickers), 10)
 
-    # Flatten MultiIndex columns
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+    def fetch_single(ticker: str) -> tuple:
+        try:
+            series = load_series(ticker, start, end)
+            return ticker, series
+        except Exception as e:
+            logger.warning(f"Failed to load {ticker}: {e}")
+            return ticker, {"error": str(e)}
 
-    result = df.dropna()
-    logger.info(
-        f"Loaded {len(result)} observations for {len(result.columns)} tickers"
-    )
-    return result
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(fetch_single, t): t for t in tickers}
+        for future in as_completed(futures):
+            ticker, data = future.result()
+            results[ticker] = data
+
+    if return_errors:
+        # Return dict with errors included (for API endpoints)
+        logger.info(f"Batch load complete: {len(results)} tickers processed")
+        return results
+    else:
+        # Return DataFrame, dropping failed tickers (for backtest)
+        valid_series = {k: v for k, v in results.items() if isinstance(v, pd.Series)}
+        if not valid_series:
+            raise ValueError("No valid price data for any ticker")
+        df = pd.DataFrame(valid_series).dropna()
+        logger.info(f"Batch load complete: {len(df)} observations for {len(df.columns)} tickers")
+        return df

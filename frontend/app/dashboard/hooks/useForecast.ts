@@ -7,7 +7,6 @@ import { useToast } from '../../../components/ui/Toast';
 import { type GenerationResult, executeUserCode } from '../../../lib/claude/client';
 import {
   calculateForecastMetrics,
-  calculateOverallForecastMetrics,
   type ForecastData,
   type OverallForecastMetrics
 } from '../../../lib/utils/forecastMetrics';
@@ -287,7 +286,8 @@ export function useForecast(): UseForecastReturn {
   }
 
   /**
-   * Execute traditional algorithm forecast via backend API.
+   * Execute traditional algorithm forecast via batch backend API.
+   * Fetches all prices in parallel on backend, then runs models sequentially.
    */
   async function runTraditionalForecast(
     tickers: string[],
@@ -298,38 +298,47 @@ export function useForecast(): UseForecastReturn {
     currentAlgo: string,
     onProgress: () => void
   ) {
-    for (let i = 0; i < tickers.length; i++) {
-      const ticker = tickers[i];
-      try {
-        if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
+    const toSeries = (d: string[], v: number[]) =>
+      d.map((x, i) => ({ date: x, price: v[i] }));
 
-        const res = await fetch(`/api/forecast/${currentAlgo.toLowerCase()}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ticker, start, end, horizon: currentParams.forecastDays }),
-        });
+    try {
+      const res = await fetch(`/api/forecast/${currentAlgo.toLowerCase()}/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tickers,
+          start,
+          end,
+          horizon: currentParams.forecastDays,
+          calculate_metrics: true  // Request backend to calculate MSE/MAE
+        }),
+      });
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const payload = await res.json();
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const batchData = await res.json();
 
-        if (!payload.history_dates || !payload.history_values ||
-            !payload.forecast_dates || !payload.forecast_values) {
-          throw new Error(`Invalid response structure for ${ticker}`);
+      for (const ticker of tickers) {
+        const payload = batchData[ticker];
+
+        if (!payload || payload.error) {
+          console.error(`Forecast failed for ${ticker}:`, payload?.error);
+          tempDataMap[ticker] = { historySeries: [], forecastSeries: [], algorithm: currentAlgo };
+        } else if (!payload.history_dates || !payload.forecast_dates) {
+          console.error(`Invalid response structure for ${ticker}`);
+          tempDataMap[ticker] = { historySeries: [], forecastSeries: [], algorithm: currentAlgo };
+        } else {
+          tempDataMap[ticker] = {
+            historySeries: toSeries(payload.history_dates, payload.history_values),
+            forecastSeries: toSeries(payload.forecast_dates, payload.forecast_values),
+            algorithm: currentAlgo,
+            metrics: payload.metrics  // Use backend-calculated metrics
+          };
         }
-
-        const toSeries = (d: string[], v: number[]) =>
-          d.map((x, i) => ({ date: x, price: v[i] }));
-
-        tempDataMap[ticker] = {
-          historySeries: toSeries(payload.history_dates, payload.history_values),
-          forecastSeries: toSeries(payload.forecast_dates, payload.forecast_values),
-          algorithm: currentAlgo
-        };
-
         onProgress();
-
-      } catch (err) {
-        console.error(`Forecast failed for ${ticker}:`, err);
+      }
+    } catch (err) {
+      console.error('Batch forecast failed:', err);
+      for (const ticker of tickers) {
         tempDataMap[ticker] = { historySeries: [], forecastSeries: [], algorithm: currentAlgo };
         onProgress();
       }
@@ -358,6 +367,7 @@ export function useForecast(): UseForecastReturn {
 
   /**
    * Calculate overall metrics and log forecast results for persistence.
+   * For classical algorithms, metrics come from backend. For Custom AI, calculate frontend-side.
    */
   async function calculateAndLogMetrics(
     tempDataMap: Record<string, ForecastData>,
@@ -375,20 +385,32 @@ export function useForecast(): UseForecastReturn {
 
     const currentIsClaudeSelected = currentAlgo === "Custom AI Strategy";
 
+    // For Custom AI, calculate metrics frontend-side. For classical, metrics already in data from backend.
     const updatedForecasts = await Promise.all(
       forecasts.map(async ([ticker, data]) => {
-        try {
-          const metrics = await calculateForecastMetrics(
-            data,
-            data.algorithm!,
-            ticker,
-            currentIsClaudeSelected ? currentStrategy : undefined
-          );
-          return [ticker, { ...data, metrics }];
-        } catch (error) {
-          console.error(`Failed to calculate metrics for ${ticker}:`, error);
-          return [ticker, { ...data, metrics: { mse: 0, mae: 0 } }];
+        // If metrics already present (from backend), use them
+        if (data.metrics && (data.metrics.mse > 0 || data.metrics.mae > 0)) {
+          return [ticker, data];
         }
+
+        // Only calculate frontend-side for Custom AI
+        if (currentIsClaudeSelected) {
+          try {
+            const metrics = await calculateForecastMetrics(
+              data,
+              data.algorithm!,
+              ticker,
+              currentStrategy
+            );
+            return [ticker, { ...data, metrics }];
+          } catch (error) {
+            console.error(`Failed to calculate metrics for ${ticker}:`, error);
+            return [ticker, { ...data, metrics: { mse: 0, mae: 0 } }];
+          }
+        }
+
+        // Classical with no metrics - shouldn't happen, but handle gracefully
+        return [ticker, { ...data, metrics: { mse: 0, mae: 0 } }];
       })
     );
 
@@ -399,29 +421,33 @@ export function useForecast(): UseForecastReturn {
 
     setForecastDataMap({ ...tempDataMap });
 
+    // Calculate overall metrics by aggregating individual metrics
     let metricsForLogging = null;
     try {
       setOverallMetricsLoading(true);
-      const stockDataList = updatedForecasts.map((result) => {
-        const [ticker, data] = result as [string, ForecastData];
-        return {
-          ticker,
-          data,
-          forecastAlgorithm: data.algorithm!,
-          claudeStrategy: currentIsClaudeSelected ? currentStrategy : undefined
+
+      const allMetrics = updatedForecasts
+        .map((result) => (result as [string, ForecastData])[1].metrics)
+        .filter((m): m is { mse: number; mae: number } => m !== undefined && (m.mse > 0 || m.mae > 0));
+
+      if (allMetrics.length > 0) {
+        const overallMetricsResult = {
+          mse: allMetrics.reduce((sum, m) => sum + m.mse, 0) / allMetrics.length,
+          mae: allMetrics.reduce((sum, m) => sum + m.mae, 0) / allMetrics.length,
+          totalPredictions: allMetrics.length,
+          stockCount: allMetrics.length
         };
-      });
+        setOverallMetrics(overallMetricsResult);
 
-      const overallMetricsResult = await calculateOverallForecastMetrics(stockDataList);
-      setOverallMetrics(overallMetricsResult);
-
-      metricsForLogging = overallMetricsResult ? {
-        mse: overallMetricsResult.mse,
-        mae: overallMetricsResult.mae,
-        total_predictions: overallMetricsResult.totalPredictions,
-        stock_count: overallMetricsResult.stockCount
-      } : null;
-
+        metricsForLogging = {
+          mse: overallMetricsResult.mse,
+          mae: overallMetricsResult.mae,
+          total_predictions: overallMetricsResult.totalPredictions,
+          stock_count: overallMetricsResult.stockCount
+        };
+      } else {
+        setOverallMetrics(null);
+      }
     } catch (error) {
       console.error('Failed to calculate overall metrics:', error);
       setOverallMetrics(null);

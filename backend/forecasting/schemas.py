@@ -5,7 +5,9 @@ ensuring data integrity at the API boundary.
 """
 
 from datetime import date, datetime
-from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Any, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 
 class ForecastRequest(BaseModel):
@@ -19,7 +21,10 @@ class ForecastRequest(BaseModel):
         start: Inclusive start date for historical data window
         end: Exclusive end date for historical data window
         horizon: Number of trading days to forecast forward (1-365)
+        _series: Optional pre-fetched price series (used by batch endpoint to avoid re-fetching)
     """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     ticker: str = Field(
         ...,
@@ -42,6 +47,7 @@ class ForecastRequest(BaseModel):
         le=365,
         description="Number of trading days to predict forward",
     )
+    _series: Optional[Any] = PrivateAttr(default=None)  # pd.Series, optional pre-fetched data
 
     @field_validator("ticker")
     @classmethod

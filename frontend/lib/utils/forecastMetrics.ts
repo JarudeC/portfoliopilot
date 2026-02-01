@@ -1,10 +1,14 @@
-// Utility functions for calculating TRUE MSE/MAE using real backend algorithms
+/**
+ * Forecast metrics utilities.
+ * For classical algorithms (ARIMA, LSTM, Autoformer), metrics come from the backend.
+ * For Custom AI Strategy, metrics are calculated frontend-side using this module.
+ */
 
 export interface ForecastData {
   historySeries: { date: string; price: number }[];
   forecastSeries: { date: string; price: number; confidence?: number }[];
-  algorithm?: string; // The algorithm used to generate this forecast
-  metrics?: ForecastMetrics; // Pre-calculated metrics to avoid duplication
+  algorithm?: string;
+  metrics?: ForecastMetrics; // Backend-calculated for classical, frontend for Custom AI
 }
 
 export interface ForecastMetrics {
@@ -20,351 +24,48 @@ export interface OverallForecastMetrics {
 }
 
 /**
- * Calculate overall MSE/MAE across multiple stocks for model performance assessment
- * Used for research purposes to get single metrics representing model accuracy
- */
-export async function calculateOverallForecastMetrics(
-  stockDataList: Array<{
-    ticker: string;
-    data: ForecastData;
-    forecastAlgorithm: string;
-    claudeStrategy?: any;
-  }>
-): Promise<OverallForecastMetrics> {
-  const allPredictions: number[] = [];
-  const allActuals: number[] = [];
-  let successfulStocks = 0;
-
-  for (const { ticker, data, forecastAlgorithm, claudeStrategy } of stockDataList) {
-    try {
-      const isCustomAI = forecastAlgorithm.toLowerCase() === 'custom ai strategy';
-      
-      // For Custom AI, use already-generated predictions to avoid rate limiting
-      if (isCustomAI) {
-        // Use the forecast data that was already generated (no API calls needed)
-        const { historySeries, forecastSeries } = data;
-        
-        if (historySeries.length < 20 || forecastSeries.length === 0) {
-          continue;
-        }
-
-        // Use same 70/30 split as other algorithms
-        const splitIndex = Math.floor(historySeries.length * 0.7);
-        const trainData = historySeries.slice(0, splitIndex);
-        const testData = historySeries.slice(splitIndex);
-        
-        if (testData.length < 5) {
-          continue;
-        }
-
-        // Use the already-generated forecast predictions
-        // The forecastSeries already contains absolute prices (lastHistoricalPrice * multiplier)
-        let predictionsFromForecast = forecastSeries.slice(0, testData.length).map(f => f.price);
-        
-        // Ensure arrays match length
-        let actualPrices = testData.map(d => d.price);
-        if (predictionsFromForecast.length !== actualPrices.length) {
-          const minLength = Math.min(predictionsFromForecast.length, actualPrices.length);
-          predictionsFromForecast = predictionsFromForecast.slice(0, minLength);
-          actualPrices = actualPrices.slice(0, minLength);
-        }
-
-        // Add to overall arrays
-        allPredictions.push(...predictionsFromForecast);
-        allActuals.push(...actualPrices);
-        successfulStocks++;
-        continue;
-      }
-      
-      // Add delay to prevent API rate limiting
-      if (successfulStocks > 0) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-      const { historySeries } = data;
-      
-      if (historySeries.length < 20) {
-        continue; // Skip stocks with insufficient data
-      }
-      
-      // Use same backtest approach as individual calculation
-      const splitIndex = Math.floor(historySeries.length * 0.7);
-      const trainData = historySeries.slice(0, splitIndex);
-      const testData = historySeries.slice(splitIndex);
-      
-      if (testData.length < 5) {
-        continue; // Skip if test data too small
-      }
-
-      // For Custom AI, we should never reach this point since it's handled above
-      if (isCustomAI) {
-        console.error(`Custom AI should not reach the backend prediction code path for ${ticker}`);
-        continue;
-      }
-
-      let predictions: number[];
-      
-      predictions = await generateBacktestPredictionsFromBackend(
-        trainData, 
-        testData.length, 
-        forecastAlgorithm,
-        ticker,
-        testData
-      );
-      
-      // Get actual prices (same logic as individual function)
-      let actualPrices: number[];
-      
-      if (isCustomAI) {
-        actualPrices = testData.map(d => d.price);
-      } else {
-        const embeddedTestPrices = (predictions as any)._backendTestPrices;
-        const embeddedTicker = (predictions as any)._ticker;
-        
-        if (embeddedTestPrices && embeddedTicker === ticker) {
-          actualPrices = embeddedTestPrices;
-        } else {
-          actualPrices = testData.map(d => d.price);
-        }
-      }
-      
-      // Convert Custom AI multipliers to absolute prices
-      const basePrice = trainData[trainData.length - 1].price;
-      let adjustedPredictions: number[];
-      
-      if (isCustomAI) {
-        adjustedPredictions = predictions.map(multiplier => basePrice * multiplier);
-      } else {
-        adjustedPredictions = predictions;
-      }
-      
-      // Ensure array lengths match
-      if (adjustedPredictions.length !== actualPrices.length) {
-        const minLength = Math.min(adjustedPredictions.length, actualPrices.length);
-        adjustedPredictions = adjustedPredictions.slice(0, minLength);
-        actualPrices = actualPrices.slice(0, minLength);
-      }
-      
-      // Add to overall arrays
-      allPredictions.push(...adjustedPredictions);
-      allActuals.push(...actualPrices);
-      successfulStocks++;
-      
-    } catch (error) {
-      // Skip failed stocks but continue with others
-      console.warn(`Failed to calculate metrics for ${ticker}:`, error);
-      continue;
-    }
-  }
-
-  // Calculate overall MSE and MAE across all stocks
-  if (allPredictions.length === 0 || allActuals.length === 0) {
-    return { 
-      mse: 0, 
-      mae: 0, 
-      totalPredictions: 0, 
-      stockCount: 0 
-    };
-  }
-
-  const overallMSE = calculateMSE(allPredictions, allActuals);
-  const overallMAE = calculateMAE(allPredictions, allActuals);
-
-  return {
-    mse: overallMSE,
-    mae: overallMAE,
-    totalPredictions: allPredictions.length,
-    stockCount: successfulStocks
-  };
-}
-
-/**
- * Calculate TRUE MSE/MAE for forecast by backtesting using the real backend algorithms
- * This splits historical data, calls the actual backend, then compares to actual known prices
+ * Get forecast metrics - returns backend metrics or calculates for Custom AI.
+ * Uses 70/30 train/test split for backtesting validation.
  */
 export async function calculateForecastMetrics(
-  data: ForecastData, 
+  data: ForecastData,
   forecastAlgorithm?: string,
-  ticker?: string,
-  claudeStrategy?: any // Claude GenerationResult for Custom AI
+  _ticker?: string,      // Kept for API compatibility
+  _claudeStrategy?: any  // Kept for API compatibility
 ): Promise<ForecastMetrics> {
-  const { historySeries } = data;
-  
-  if (historySeries.length < 20 || !ticker || !forecastAlgorithm) {
+  // If metrics already calculated by backend, return them
+  if (data.metrics && (data.metrics.mse > 0 || data.metrics.mae > 0)) {
+    return data.metrics;
+  }
+
+  // Only Custom AI reaches here - calculate frontend-side
+  const isCustomAI = forecastAlgorithm?.toLowerCase() === 'custom ai strategy';
+  if (!isCustomAI) {
+    return { mse: 0, mae: 0 }; // Classical should have backend metrics
+  }
+
+  // Custom AI: use already-generated forecast data
+  const { historySeries, forecastSeries } = data;
+  if (historySeries.length < 20 || !forecastSeries.length) {
     return { mse: 0, mae: 0 };
   }
 
-  // For custom AI strategy, we'll calculate metrics using the generated forecast data
-  const isCustomAI = forecastAlgorithm.toLowerCase() === 'custom ai strategy';
-
-  // Backtest approach: Use 70% of historical data for training, 30% for testing
+  // 70/30 split for backtesting
   const splitIndex = Math.floor(historySeries.length * 0.7);
-  const trainData = historySeries.slice(0, splitIndex);
   const testData = historySeries.slice(splitIndex);
-  
-  if (testData.length < 5) {
+  const minLen = Math.min(testData.length, forecastSeries.length);
+
+  if (minLen < 5) {
     return { mse: 0, mae: 0 };
   }
 
-  try {
-    let predictions: number[];
-    
-    if (isCustomAI) {
-      // For Custom AI, don't call API again - use the data already available
-      // Return simple metrics based on forecast data to avoid rate limiting
-      const { forecastSeries } = data;
-      if (forecastSeries && forecastSeries.length > 0) {
-        // Use the already-generated forecast predictions
-        const testLength = Math.min(testData.length, forecastSeries.length);
-        const actualPrices = testData.slice(0, testLength).map(d => d.price);
-        const predictedPrices = forecastSeries.slice(0, testLength).map(f => f.price);
-        
-        const mse = calculateMSE(predictedPrices, actualPrices);
-        const mae = calculateMAE(predictedPrices, actualPrices);
-        
-        return { mse, mae };
-      } else {
-        // No forecast data available, return zero metrics
-        return { mse: 0, mae: 0 };
-      }
-    } else {
-      // Generate predictions using the REAL backend algorithm with proper backtesting
-      predictions = await generateBacktestPredictionsFromBackend(
-        trainData, 
-        testData.length, 
-        forecastAlgorithm,
-        ticker,
-        testData
-      );
-    }
-    
-    // Calculate TRUE MSE and MAE by comparing predictions to actual test data
-    // Use embedded backend test data to avoid global race conditions
-    const embeddedTestPrices = (predictions as any)._backendTestPrices;
-    const embeddedTicker = (predictions as any)._ticker;
-    
-    let actualPrices: number[];
-    if (embeddedTestPrices && embeddedTicker === ticker) {
-      actualPrices = embeddedTestPrices;
-    } else {
-      actualPrices = testData.map(d => d.price);
-    }
-    
-    // Backend APIs return absolute prices - use directly
-    let adjustedPredictions = predictions;
-    let adjustedActualPrices = actualPrices;
+  const actuals = testData.slice(0, minLen).map(d => d.price);
+  const predictions = forecastSeries.slice(0, minLen).map(f => f.price);
 
-    // Ensure array lengths match for accurate calculation
-    if (adjustedPredictions.length !== adjustedActualPrices.length) {
-      const minLength = Math.min(adjustedPredictions.length, adjustedActualPrices.length);
-      adjustedPredictions = adjustedPredictions.slice(0, minLength);
-      adjustedActualPrices = adjustedActualPrices.slice(0, minLength);
-    }
-    
-    const mse = calculateMSE(adjustedPredictions, adjustedActualPrices);
-    const mae = calculateMAE(adjustedPredictions, adjustedActualPrices);
-
-
-    return { mse, mae };
-  } catch (error) {
-    return { mse: 0, mae: 0 };
-  }
-}
-
-/**
- * Generate backtest predictions using the REAL backend algorithms
- */
-async function generateBacktestPredictionsFromBackend(
-  trainData: { date: string; price: number }[], 
-  predictionLength: number, 
-  algorithm: string,
-  ticker: string,
-  testData?: { date: string; price: number }[]
-): Promise<number[]> {
-  if (trainData.length < 5) {
-    throw new Error('Insufficient training data for backtest');
-  }
-
-  // Step 1: First, get the full backend response to access history_values for proper backtesting
-  const fullStartDate = trainData[0].date;
-  const fullEndDate = testData && testData.length > 0 ? testData[testData.length - 1].date : trainData[trainData.length - 1].date;
-  
-  const fullResponse = await fetch(`/api/forecast/${algorithm.toLowerCase()}`, {
-    method: "POST", 
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ 
-      ticker, 
-      start: fullStartDate,
-      end: fullEndDate,
-      horizon: 1 // We just need the historical data
-    }),
-  });
-
-  if (!fullResponse.ok) {
-    throw new Error(`Full backend forecast failed: ${fullResponse.status}`);
-  }
-
-  const fullPayload = await fullResponse.json();
-  
-  if (!fullPayload.history_values || !Array.isArray(fullPayload.history_values)) {
-    throw new Error('Backend did not return history_values');
-  }
-
-  // Step 2: Use backend's history_values for proper 70/30 split
-  const backendHistoricalPrices = fullPayload.history_values;
-  const splitIndex = Math.floor(backendHistoricalPrices.length * 0.7);
-  const backendTestPrices = backendHistoricalPrices.slice(splitIndex);
-
-  // Store this globally so we can access it from the main function
-  if (!(global as any).backendTestData) {
-    (global as any).backendTestData = {};
-  }
-  (global as any).backendTestData[ticker] = backendTestPrices;
-
-  // Step 3: Now call backend with only the training period to get predictions for the test period
-  const startDate = trainData[0].date;
-  const endDate = trainData[trainData.length - 1].date;
-
-  try {
-    // Call backend with training period only to get predictions for test period
-    const response = await fetch(`/api/forecast/${algorithm.toLowerCase()}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        ticker, 
-        start: startDate, 
-        end: endDate, 
-        horizon: backendTestPrices.length // Predict for the length of our backend test data
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Backend forecast failed: ${response.status} - ${response.statusText}`);
-    }
-
-    const payload = await response.json();
-
-
-    // Check if we got the expected data structure
-    if (!payload.forecast_values || !Array.isArray(payload.forecast_values)) {
-      throw new Error('Invalid backend response structure');
-    }
-
-    // Ensure lengths match before returning
-    if (payload.forecast_values.length !== backendTestPrices.length) {
-      const minLength = Math.min(payload.forecast_values.length, backendTestPrices.length);
-      payload.forecast_values = payload.forecast_values.slice(0, minLength);
-      (global as any).backendTestData[ticker] = backendTestPrices.slice(0, minLength);
-    }
-    
-    // Store the backend test prices directly on the returned predictions to avoid race conditions
-    const predictions = payload.forecast_values;
-    (predictions as any)._backendTestPrices = backendTestPrices;
-    (predictions as any)._ticker = ticker;
-    
-    return predictions;
-  } catch (error) {
-    throw error;
-  }
+  return {
+    mse: calculateMSE(predictions, actuals),
+    mae: calculateMAE(predictions, actuals)
+  };
 }
 
 /**
@@ -372,17 +73,15 @@ async function generateBacktestPredictionsFromBackend(
  */
 function calculateMSE(predictions: number[], actual: number[]): number {
   if (predictions.length !== actual.length || predictions.length === 0) return 0;
-  
-  const squaredErrors = predictions.map((pred, i) => Math.pow(pred - actual[i], 2));
-  return squaredErrors.reduce((sum, err) => sum + err, 0) / predictions.length;
+  const sum = predictions.reduce((acc, p, i) => acc + (p - actual[i]) ** 2, 0);
+  return sum / predictions.length;
 }
 
 /**
- * Calculate Mean Absolute Error  
+ * Calculate Mean Absolute Error
  */
 function calculateMAE(predictions: number[], actual: number[]): number {
   if (predictions.length !== actual.length || predictions.length === 0) return 0;
-
-  const absoluteErrors = predictions.map((pred, i) => Math.abs(pred - actual[i]));
-  return absoluteErrors.reduce((sum, err) => sum + err, 0) / predictions.length;
+  const sum = predictions.reduce((acc, p, i) => acc + Math.abs(p - actual[i]), 0);
+  return sum / predictions.length;
 }
